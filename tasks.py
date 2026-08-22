@@ -4,7 +4,10 @@
     python tasks.py generate --seed 42 --scale 5000
     python tasks.py eval --no-llm
 
-The Makefile stays the canonical interface — the Review Guide's gates call
+Every target runs inside the project virtualenv at .venv/ if it exists, whether
+or not you activated it — same as the Makefile.
+
+The Makefile stays the canonical interface: the Review Guide's gates call
 `make eval`, `make generate`, etc. This exists because GNU make is not on PATH
 on this Windows box (MinGW's `mingw32-make` works, and so does this).
 """
@@ -14,12 +17,30 @@ from __future__ import annotations
 import argparse
 import subprocess
 import sys
+from pathlib import Path
 
-PY = sys.executable
+ROOT = Path(__file__).resolve().parent
+
+
+def _interpreter() -> str:
+    """The project venv if it exists, else whatever is running us.
+
+    Means `python tasks.py test` uses .venv/ without an activate step, and
+    matches the Makefile so both entry points cannot drift apart.
+    """
+    for rel in ("Scripts/python.exe", "bin/python"):
+        candidate = ROOT / ".venv" / rel
+        if candidate.exists():
+            return str(candidate)
+    return sys.executable
+
+
+PY = _interpreter()
 
 HELP = """AI Finance Controller
 
-  setup         install dependencies (editable + dev extras)
+  venv          create the project virtualenv at .venv/
+  setup         venv + install dependencies (editable + dev extras)
   generate      build a seeded synthetic dataset      [gate 2]
   match         run the reconciliation pipeline       [gate 8]
   eval          score the agent against truth.json    [gate 3]
@@ -39,6 +60,11 @@ def run(*cmd: str) -> int:
     return subprocess.call(list(cmd))
 
 
+def make_venv() -> int:
+    rc = run(sys.executable, "-m", "venv", str(ROOT / ".venv"))
+    return rc or run(_interpreter(), "-m", "pip", "install", "--upgrade", "pip")
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(add_help=False)
     ap.add_argument("target", nargs="?", default="help")
@@ -54,8 +80,11 @@ def main() -> int:
     if t == "help":
         print(HELP)
         return 0
+    if t == "venv":
+        return make_venv()
     if t == "setup":
-        return run(PY, "-m", "pip", "install", "-e", ".[dev]")
+        rc = make_venv()
+        return rc or run(_interpreter(), "-m", "pip", "install", "-e", ".[dev]")
     if t == "generate":
         return run(PY, "-m", "generator.generate",
                    "--seed", a.seed, "--scale", a.scale, "--out", data)

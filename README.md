@@ -51,21 +51,45 @@ They are not written in advance, because there is nothing honest to put in them 
 
 ## Quickstart
 
+The project runs in its own virtualenv at `.venv/`. One command creates it and
+installs everything:
+
 ```bash
-python -m pip install -e ".[dev]"
+make setup
+```
+
+Then:
+
+```bash
 make generate SEED=42 SCALE=500      # gate 2
 make eval     SEED=42 SCALE=500      # gate 3
 ```
 
+Every `make` target uses `.venv/` automatically — **there is no activate step**.
+Nothing is installed into your global Python, and the LLM client is not
+installed at all until gate 11 (`pip install -e ".[llm]"`), so gates 0–10 and
+the `--no-llm` ablation provably run without it.
+
 **Windows:** GNU `make` is not on PATH on the build machine. Use MinGW's
-`mingw32-make <target>`, or the equivalent no-make runner:
+`mingw32-make <target>`, or the equivalent no-make runner, which picks up
+`.venv/` the same way:
 
 ```bash
+python tasks.py setup
 python tasks.py generate --seed 42 --scale 500
 python tasks.py eval --seed 42 --scale 500 --no-llm
 ```
 
-Run `make help` (or `python tasks.py help`) for every target.
+To work in the venv directly:
+
+```bash
+source .venv/Scripts/activate     # Git Bash on Windows
+source .venv/bin/activate         # macOS / Linux
+.venv\Scripts\Activate.ps1        # PowerShell
+```
+
+Run `make help` (or `python tasks.py help`) for every target; it prints which
+interpreter it resolved to.
 
 ---
 
@@ -135,7 +159,7 @@ only by `eval/`, never by the agent.
 
 ---
 
-Built to the spec in **AI Finance Controller.md**, reviewed gate by gate against
-**AI Finance Controller — Review Guide.md**. Both live alongside this repo, not
-inside it; section references throughout the code (`§4.1`, `§6.2`, ...) point at
-the implementation guide.
+Built to a written implementation guide and reviewed gate by gate against a
+companion review guide. Both are working documents kept outside version
+control; the section references throughout the code (`§4.1`, `§6.2`, ...)
+point at the implementation guide.

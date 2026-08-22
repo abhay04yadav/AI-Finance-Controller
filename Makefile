@@ -1,22 +1,36 @@
 # AI Finance Controller — task runner. Guide §3.2.
 #
+# Every target runs inside the project virtualenv at .venv/ if it exists, so you
+# never have to remember to activate it. `make venv` creates it.
+#
 # Windows note: GNU `make` is not on PATH here, but MinGW ships `mingw32-make`.
 # Use `mingw32-make <target>`, or `alias make=mingw32-make` in your shell.
 # `python tasks.py <target>` is an equivalent fallback that needs no make at all.
 
-PY      ?= python
+VENV := .venv
+ifeq ($(OS),Windows_NT)
+  VENV_PY := $(VENV)/Scripts/python.exe
+else
+  VENV_PY := $(VENV)/bin/python
+endif
+
+# Prefer the venv interpreter; fall back to whatever `python` is on PATH.
+PY      ?= $(if $(wildcard $(VENV_PY)),$(VENV_PY),python)
+
 SEED    ?= 42
 SCALE   ?= 500
 SEEDS   ?=
 NO_LLM  ?=
 DATA    ?= data/seed$(SEED)
 
-.PHONY: help setup generate match eval demo test lint typecheck layer-check drift-check tree clean
+.PHONY: help venv setup generate match eval demo test lint typecheck layer-check drift-check tree clean
 
 help:
 	@echo "AI Finance Controller"
 	@echo ""
-	@echo "  make setup         install dependencies (editable + dev extras)"
+	@echo "  make venv          create the project virtualenv at .venv/"
+	@echo "  make setup         venv + install dependencies (editable + dev extras)"
+	@echo ""
 	@echo "  make generate      build a seeded synthetic dataset      [gate 2]"
 	@echo "  make match         run the reconciliation pipeline       [gate 8]"
 	@echo "  make eval          score the agent against truth.json    [gate 3]"
@@ -29,10 +43,15 @@ help:
 	@echo "  make drift-check   the six Review Guide part 3 checks"
 	@echo "  make tree          print the repo structure (no tree(1) on Windows)"
 	@echo ""
+	@echo "  Interpreter: $(PY)"
 	@echo "  Vars: SEED=$(SEED) SCALE=$(SCALE) SEEDS= NO_LLM=1"
 
-setup:
-	$(PY) -m pip install -e ".[dev]"
+venv:
+	python -m venv $(VENV)
+	$(VENV_PY) -m pip install --upgrade pip
+
+setup: venv
+	$(VENV_PY) -m pip install -e ".[dev]"
 
 generate:
 	$(PY) -m generator.generate --seed $(SEED) --scale $(SCALE) --out $(DATA)

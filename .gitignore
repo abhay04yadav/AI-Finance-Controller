@@ -11,6 +11,10 @@ venv/
 # Secrets — .env.example is checked in, .env never is (§9.8)
 .env
 
+# Design docs stay local. The implementation guide and the Review Guide are
+# working documents, not deliverables — they are not committed and not pushed.
+docs/
+
 # Generated datasets. Reproducible from a seed, so never committed (§2.7 rule 2).
 data/
 build/
