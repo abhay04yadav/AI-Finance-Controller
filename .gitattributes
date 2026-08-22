@@ -1,0 +1,17 @@
+# Normalize to LF in the repository. Without this, shell scripts authored on
+# Windows land on the CI's Ubuntu runner with CRLF and fail with
+# "bad interpreter: /usr/bin/env bash^M".
+* text=auto eol=lf
+
+*.sh   text eol=lf
+*.py   text eol=lf
+*.sql  text eol=lf
+*.yml  text eol=lf
+*.toml text eol=lf
+*.md   text eol=lf
+Makefile text eol=lf
+
+# Generated datasets are byte-compared for determinism (§2.7 rule 2). If they
+# are ever committed, they must not be touched by newline conversion.
+*.csv  -text
+*.json -text

@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Secrets — .env.example is checked in, .env never is (§9.8)
+.env
+
+# Generated datasets. Reproducible from a seed, so never committed (§2.7 rule 2).
+data/
+build/
+
+# Eval run snapshots (keep the directory, ignore the dumps)
+eval/runs/*.json
+
+# Node / Next.js — gate 12
+node_modules/
+web/.next/
+web/out/
+
+# OS
+.DS_Store
+Thumbs.db
