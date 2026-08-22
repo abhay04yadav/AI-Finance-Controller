@@ -15,6 +15,10 @@ venv/
 # working documents, not deliverables — they are not committed and not pushed.
 docs/
 
+# The build log behind the submission answer "What broke, and how you got out"
+# (§0.1). A working document — kept local, never committed, never pushed.
+broke_fixed.txt
+
 # Generated datasets. Reproducible from a seed, so never committed (§2.7 rule 2).
 data/
 build/
