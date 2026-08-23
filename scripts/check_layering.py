@@ -37,7 +37,12 @@ ALLOWED: dict[str, set[str]] = {
     "adjudication": {"core"},
     "pipeline": {"core", "ingest", "matching", "adjudication", "posting", "exceptions_"},
     "generator": {"core"},
-    "eval": {"core", "pipeline", "api"},
+    # eval/ may reach the generator: §6.3 requires it to refuse a dataset built
+    # by a different major version, and §7.5's multi-seed and held-out-seed runs
+    # need dataset preparation. This does NOT weaken the gate 3 stop condition,
+    # which is about the AGENT's internals (matching/adjudication/posting/ingest)
+    # — the generator is not the agent, and scoring itself stays pure.
+    "eval": {"core", "pipeline", "generator"},
 }
 
 

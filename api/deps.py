@@ -18,11 +18,8 @@ composition root is where impure edges belong.
 from __future__ import annotations
 
 from datetime import date, datetime
-from zoneinfo import ZoneInfo
 
-from core.dates import IST_TZ_NAME
-
-IST = ZoneInfo(IST_TZ_NAME)
+from core.dates import IST
 
 
 class SystemClock:

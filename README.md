@@ -379,6 +379,11 @@ The abstraction boundaries are chosen so that three plausible next features stay
 > **No number appears in this section until a measured run produces it.** Cells marked `—`
 > are not yet implemented. They are filled from `make eval` output against planted ground
 > truth — never estimated, never rounded up.
+>
+> The harness itself is live as of gate 3 and currently scores the system at **0.0%**,
+> because the agent is still a stub. That is the correct result: a harness that cannot
+> report a failing score cannot be trusted to report a passing one. Percentages are
+> truncated rather than rounded, so 99.94% prints as 99.9%.
 
 ### Why two accuracy numbers, not one
 
@@ -618,9 +623,9 @@ robust, and a far better story.
 | # | Gate | Verification | Status |
 |---|---|---|---|
 | 0 | Repo skeleton | Structure and layering enforced | ✅ |
-| 1 | Core domain | Float money impossible to construct | ⬜ |
-| 2 | Generator | Deterministic; zero order IDs in bank narration | ⬜ |
-| 3 | Eval harness | Exact-set-equality scoring | ⬜ |
+| 1 | Core domain | Float money impossible to construct | ✅ |
+| 2 | Generator | Deterministic; zero order IDs in bank narration | ✅ |
+| 3 | Eval harness | Exact-set-equality scoring | ✅ |
 | 4 | L0 ingest | Totals tie; idempotent | ⬜ |
 | 5 | L1 exact matcher | **Precision exactly 100%** | ⬜ |
 | 6 | L2 fee model | Recovers planted rate; median not mean | ⬜ |

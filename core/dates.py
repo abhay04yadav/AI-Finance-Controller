@@ -20,6 +20,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import date, timedelta
 from typing import Final, Protocol
+from zoneinfo import ZoneInfo
 
 SATURDAY: Final = 5
 SUNDAY: Final = 6
@@ -29,6 +30,10 @@ SUNDAY: Final = 6
 _MAX_STEPS: Final = 3650
 
 IST_TZ_NAME: Final = "Asia/Kolkata"
+
+#: Business dates are always Asia/Kolkata (§2.7 rule 6). Defined once, here,
+#: so ingest and the composition root cannot disagree about what "today" means.
+IST: Final = ZoneInfo(IST_TZ_NAME)
 
 
 @dataclass(frozen=True, slots=True)
