@@ -1,0 +1,12 @@
+{
+  "_comment": "Regression baseline for tests/integration/test_golden.py (guide 7.5). Floors are updated DELIBERATELY when a gate genuinely improves the score, and committed as a decision. Never auto-refresh this file: a golden that moves whenever the code moves is not a regression test.",
+  "_gate": "3 \u2014 agent is a stub, so every floor is 0.0. First real match at gate 5.",
+  "seed": 42,
+  "scale": 200,
+  "total": 24,
+  "planted": 12,
+  "min_match_rate": 0.0,
+  "min_match_precision": 0.0,
+  "min_exception_recall": 0.0,
+  "max_llm_call_ratio": 0.1
+}
