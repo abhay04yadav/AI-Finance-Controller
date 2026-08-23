@@ -57,7 +57,10 @@ target-version = "py311"
 select = ["E", "F", "W", "I", "UP", "B", "SIM", "TRY", "RUF"]
 # E722 (bare except) is in E and stays ON. A swallowed exception in a
 # reconciliation system is how money disappears (§5.5).
-ignore = ["TRY003"]
+# RUF001 (ambiguous chars in string literals) stays ON — that is a real parsing
+# bug class. RUF002/RUF003 flag the same characters in docstrings and comments,
+# where an em dash or a minus sign is correct prose, not a defect.
+ignore = ["TRY003", "RUF002", "RUF003"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["B011"]
