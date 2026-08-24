@@ -46,17 +46,36 @@ MIN_PERIOD_DAYS = 10
 MAX_PERIOD_DAYS = 120
 
 #: The rate the merchant negotiated. Never told to the agent, which must infer
-#: it from confident matches (§2.3). 2.00% is the common domestic card slab.
+#: it from confident matches (§2.3).
 #:
-#: WARNING: 2.00% is also the fallback L2 returns when it has too few samples
-#: (§4.2 step 5). A dataset at exactly this rate therefore CANNOT prove that
-#: inference works — an L2 that never runs would return 0.02 and pass a
-#: "within 0.1% of truth" check. Always validate the fee model against a rate
-#: that is not round: see --fee-rate, and tests/unit/test_fee_datasets.py.
-PLANTED_FEE_RATE = 0.02
+#: Deliberately NOT 2.00%, for two reasons that point the same way:
+#:
+#:   1. 2.00% is the value L2 falls back to when it has too few samples (§4.2
+#:      step 5). A dataset at exactly that rate cannot prove inference works —
+#:      an L2 that never ran would return 0.02 and pass a "within 0.1%" check.
+#:   2. A round number is not evidence. "Inferred MDR: 2.0000%" is
+#:      indistinguishable from a hardcoded constant to anyone watching the demo.
+#:      1.83% is a rate nobody would hardcode, which is the entire point of
+#:      §4.2's "we were never told the MDR".
+#:
+#: 1.83% is a plausible negotiated domestic card rate, and it is far enough from
+#: every entry in PLAUSIBLE_SLABS that the display snap never fires on it.
+PLANTED_FEE_RATE = 0.0183
 
 #: A different MDR slab, for international cards (§1.5 FX_OR_SLAB_VARIANCE).
 INTL_FEE_RATE = 0.035
+
+#: How much of the period the merchant's settlement report actually covers.
+#:
+#: Reports are fetched for a bounded window, so the oldest credits in a bank
+#: statement routinely have no report rows behind them. Those are the genuine
+#: N:1 cases of §1.4 — a credit, a pile of orders, and no join key — and they
+#: are what L3's date-window prune and subset-sum exist to solve (§4.3).
+#:
+#: At 1.0 the bridge resolves essentially every credit, L1 covers ~92% and L3
+#: inherits almost nothing. §3.1 budgets L1 at ~70-80%, and the gate 5 band is
+#: 60-90%, so the default leaves a real residual behind.
+REPORT_COVERAGE = 0.85
 
 MIN_ORDER_PAISE = 50_000  # ₹500
 MAX_ORDER_PAISE = 500_000  # ₹5,000
@@ -140,6 +159,30 @@ def inject_failures(world: World, seed: int) -> dict[str, int]:
     return planted
 
 
+def apply_report_coverage(world: World, coverage: float) -> int:
+    """Withhold the oldest settlements from the report the merchant holds.
+
+    Oldest rather than random, because that is how it actually happens: the
+    bank statement spans the whole period, the settlement report was pulled for
+    a recent window, and everything before it has to be reconciled without a
+    bridge.
+
+    Batches whose ledger rows were withheld (MISSING_IN_LEDGER) stay in the
+    report — that exception is *about* the settlement report knowing something
+    the books do not, so removing its rows would erase it.
+    """
+    if coverage >= 1.0:
+        return 0
+    eligible = sorted(
+        (b for b in world.batches if not b.orders_hidden_from_ledger),
+        key=lambda b: (b.settle_date, b.settlement_id),
+    )
+    withheld = len(eligible) - round(coverage * len(eligible))
+    for batch in eligible[:max(0, withheld)]:
+        batch.in_report = False
+    return max(0, withheld)
+
+
 def apply_slab_variance(world: World, seed: int, ratio: float, intl_rate: float) -> int:
     """Give some settlements a different MDR slab (§4.2 step 3, §1.5).
 
@@ -169,6 +212,7 @@ def generate(
     fee_rate: float = PLANTED_FEE_RATE,
     intl_ratio: float = 0.0,
     intl_rate: float = INTL_FEE_RATE,
+    report_coverage: float = REPORT_COVERAGE,
 ) -> dict:
     """Generate a complete dataset and validate it before returning."""
     settings = settings or Settings()
@@ -176,6 +220,7 @@ def generate(
 
     world = build_world(seed, scale, settings, fee_rate=fee_rate)
     planted = inject_failures(world, seed)
+    apply_report_coverage(world, report_coverage)
     slabbed = apply_slab_variance(world, seed, intl_ratio, intl_rate)
     if slabbed:
         planted[str(ReasonCode.FX_OR_SLAB_VARIANCE)] = slabbed
@@ -204,9 +249,9 @@ def main(argv: list[str] | None = None) -> int:
         type=float,
         default=PLANTED_FEE_RATE,
         help=(
-            "MDR to plant. Use a NON-ROUND rate (0.0175, 0.0235) to validate L2: "
-            "the default 0.02 equals L2's own fallback, so a broken fee model "
-            "would still appear to recover it."
+            "MDR to plant. The default is deliberately non-round: 2.00% is "
+            "L2's own fallback, so a dataset at that rate could not tell a "
+            "working fee model from one that never ran."
         ),
     )
     parser.add_argument(
@@ -216,6 +261,15 @@ def main(argv: list[str] | None = None) -> int:
         help="share of settlements on a different MDR slab (proves the median holds)",
     )
     parser.add_argument("--intl-rate", type=float, default=INTL_FEE_RATE)
+    parser.add_argument(
+        "--report-coverage",
+        type=float,
+        default=REPORT_COVERAGE,
+        help=(
+            "share of settlements the merchant's report covers. 1.0 gives L1 a "
+            "bridge for every credit and leaves L3 nothing to do."
+        ),
+    )
     parser.add_argument("--quiet", action="store_true")
     args = parser.parse_args(argv)
 
@@ -227,6 +281,7 @@ def main(argv: list[str] | None = None) -> int:
         fee_rate=args.fee_rate,
         intl_ratio=args.intl_ratio,
         intl_rate=args.intl_rate,
+        report_coverage=args.report_coverage,
     )
 
     if args.quiet:

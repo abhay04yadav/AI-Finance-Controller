@@ -60,6 +60,29 @@ class Bucket:
 
 
 @dataclass(frozen=True, slots=True)
+class StrategyStats:
+    """How one matching layer performed, on its own.
+
+    Reported separately because the overall number can hide a broken layer: L1
+    claiming certainty and getting one wrong would barely move a blended
+    precision, while being the single most serious failure in the system (§4.1).
+    """
+
+    name: str
+    attempted: int
+    correct: int
+
+    @property
+    def precision(self) -> float:
+        return self.correct / self.attempted if self.attempted else 0.0
+
+    @property
+    def label(self) -> str:
+        """"L1_exact" -> "L1", so the layer reads the way the guide names it."""
+        return self.name.split("_")[0]
+
+
+@dataclass(frozen=True, slots=True)
 class Metrics:
     """The marksheet for one run."""
 
@@ -93,6 +116,13 @@ class Metrics:
 
     # -- calibration ------------------------------------------------------
     calibration: tuple[Bucket, ...]
+    by_strategy: tuple[StrategyStats, ...] = ()
+    #: What L2 learned, and what the answer key actually planted (§4.2).
+    inferred_fee_rate: float | None = None
+    planted_fee_rate: float | None = None
+    fee_model_summary: str = ""
+    #: The §1.6 books-closed summary — the literal answer to the track title.
+    books: dict[str, int] = field(default_factory=dict)
 
     # -- timing (wall-clock; excluded from the fingerprint) ---------------
     elapsed_s: float = 0.0
@@ -157,6 +187,15 @@ def render(m: Metrics, *, show_timing: bool = True) -> str:
         f"({m.auto_posted} posted without a human)",
     ]
 
+    # Per layer, so a wrong confidence-1.00 match cannot hide inside a
+    # blended number (§4.1).
+    for s in m.by_strategy:
+        coverage = s.attempted / m.total if m.total else 0.0
+        out.append(
+            f"{s.label} precision           {pct(s.precision):>7}   "
+            f"({s.correct}/{s.attempted})   coverage {pct(coverage)}"
+        )
+
     if show_timing:
         out.append(
             f"Throughput            {m.throughput:>7.1f} rec/sec   "
@@ -167,6 +206,40 @@ def render(m: Metrics, *, show_timing: bool = True) -> str:
     out.append(
         f"Cost per 100 records  {money_str(round(m.cost_per_100_paise)):>9}"
     )
+
+    if m.inferred_fee_rate is not None and m.planted_fee_rate is not None:
+        error = abs(m.inferred_fee_rate - m.planted_fee_rate)
+        out += [
+            rule,
+            "Fee model (never configured, always inferred)",
+            f"  inferred   {m.inferred_fee_rate:.4%}",
+            f"  planted    {m.planted_fee_rate:.4%}   error {error:.2e}",
+            f"  {m.fee_model_summary}",
+        ]
+
+    if m.books:
+        b = m.books
+        out += [
+            rule,
+            f"BOOKS CLOSED{'':<12}{'':>10}",
+            f"  Auto-posted        {b['entries']:>6} entries   "
+            f"{money_str(b['confirmed_in_bank']):>16}",
+            f"  Pending review     {b['pending_review']:>6} entries   "
+            f"{money_str(b['pending_review_paise']):>16}",
+            f"  Exceptions         {b['exceptions']:>6} items     "
+            f"{money_str(b['exceptions_paise']):>16}",
+            "",
+            f"  Revenue recognised {'':>6}           {money_str(b['revenue']):>16}",
+            f"  Gateway fee expense{'':>6}           {money_str(b['fee_expense']):>16}",
+            f"  GST input credit claimable         {money_str(b['gst_claimable']):>16}",
+            f"  Rounding write-off                 {money_str(b['rounding_writeoff']):>16}",
+            f"  {glyph('rule') * 50}",
+            f"  Cash in bank (confirmed)           {money_str(b['confirmed_in_bank']):>16}",
+            f"  Cash in transit                    {money_str(b['in_transit']):>16}",
+            f"  In suspense                        {money_str(b['in_suspense']):>16}",
+            f"    of which awaiting your approval   "
+            f"{money_str(b['pending_review_paise']):>16}",
+        ]
 
     out += [rule, "Confidence calibration"]
     if any(b.count for b in m.calibration):

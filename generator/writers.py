@@ -26,7 +26,7 @@ from typing import Any
 
 from generator.world import Batch, OrderStatus, World
 
-GENERATOR_VERSION = "1.0.0"
+GENERATOR_VERSION = "1.1.0"   # 1.1: settlement report covers a bounded window
 
 #: Realistic settlement narrations. Each embeds the settlement number — a real
 #: signal L4 can reason about (§4.4 job A) — and nothing else identifying.
@@ -100,7 +100,10 @@ def write_ledger(path: Path, world: World) -> None:
 def write_settlement(path: Path, world: World) -> None:
     rows: list[Sequence[Any]] = []
     for batch in sorted(world.batches, key=lambda b: (b.settle_date, b.settlement_id)):
-        if not batch.order_ids:
+        # Outside the report window: the credit is in the bank statement and
+        # the orders are in the ledger, but nothing bridges them. L1 cannot
+        # touch it and L3 must solve it by inverting the fee model (§4.3).
+        if not batch.order_ids or not batch.in_report:
             continue
         totals = (
             rupees(batch.gross(world)),

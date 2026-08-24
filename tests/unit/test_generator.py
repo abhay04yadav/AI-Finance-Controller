@@ -213,10 +213,17 @@ def test_fee_and_gst_follow_the_documented_model(dataset: Path) -> None:
 
 
 def test_bank_credit_equals_the_settlement_net(dataset: Path) -> None:
+    """Only for credits the settlement report actually covers — the report spans
+    a bounded window, so older credits have no row to compare against."""
     nets = {r["utr"]: Money.from_rupee_string(r["net"]).paise
             for r in read(dataset / "settlement.csv")}
+    checked = 0
     for r in read(dataset / "bank.csv"):
+        if r["utr"] not in nets:
+            continue
         assert Money.from_rupee_string(r["amount"]).paise == nets[r["utr"]]
+        checked += 1
+    assert checked, "no bridged credits at all"
 
 
 def test_rounding_drift_stays_under_fifty_paise(dataset: Path) -> None:
@@ -292,7 +299,14 @@ def test_cross_period_refund_predates_the_settlement_window(dataset: Path) -> No
     """§4.3b: the asymmetry between the order window and the refund lookback is
     only meaningful if the refund is genuinely old."""
     ledger = {r["order_id"]: r for r in read(dataset / "ledger.csv")}
+    # A credit outside the report window has no settlement row, so take the
+    # date from the bank statement, which spans the whole period.
     settle_dates = {r["utr"]: r["settle_date"] for r in read(dataset / "settlement.csv")}
+    settle_dates.update({
+        r["utr"]: r["value_date"]
+        for r in read(dataset / "bank.csv")
+        if r["utr"] not in settle_dates
+    })
     t = truth_of(dataset)
     refs = [e["ref"] for e in t["exceptions"] if e["type"] == "CROSS_PERIOD_REFUND"]
     assert refs
@@ -333,6 +347,11 @@ def test_holiday_shift_lands_later_than_naive_t_plus_two(dataset: Path) -> None:
 
     settle = {r["utr"]: date.fromisoformat(r["settle_date"])
               for r in read(dataset / "settlement.csv")}
+    settle.update({
+        r["utr"]: date.fromisoformat(r["value_date"])
+        for r in read(dataset / "bank.csv")
+        if r["utr"] not in settle
+    })
     captures: dict[str, list[date]] = {}
     ledger = {r["order_id"]: date.fromisoformat(r["capture_date"])
               for r in read(dataset / "ledger.csv")}
@@ -397,7 +416,11 @@ def test_validation_catches_a_broken_bank_amount(tmp_path: Path) -> None:
     out = tmp_path / "badmoney"
     generate(SEED, 200, out)
     rows = read(out / "bank.csv")
-    rows[0]["amount"] = "999999.99"
+    # Must corrupt a credit the settlement report covers — validation can only
+    # cross-check those, and unbridged credits are skipped by design.
+    bridged = {r["utr"] for r in read(out / "settlement.csv")}
+    target = next(i for i, r in enumerate(rows) if r["utr"] in bridged)
+    rows[target]["amount"] = "999999.99"
     with (out / "bank.csv").open("w", newline="", encoding="utf-8") as fh:
         w = csv.DictWriter(fh, fieldnames=list(rows[0]), lineterminator="\n")
         w.writeheader()

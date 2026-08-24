@@ -35,7 +35,18 @@ ALLOWED: dict[str, set[str]] = {
     "posting": {"core"},
     "exceptions_": {"core", "posting"},
     "adjudication": {"core"},
-    "pipeline": {"core", "ingest", "matching", "adjudication", "posting", "exceptions_"},
+    # pipeline/ "wires them" (§3.2), and the journal repository is one of the
+    # things it wires. The domain still never sees SQL: posting/ and core/ hold
+    # only the JournalRepository protocol, and the concrete store is injected.
+    "pipeline": {
+        "core",
+        "ingest",
+        "matching",
+        "adjudication",
+        "posting",
+        "exceptions_",
+        "persistence",
+    },
     "generator": {"core"},
     # eval/ may reach the generator: §6.3 requires it to refuse a dataset built
     # by a different major version, and §7.5's multi-seed and held-out-seed runs

@@ -679,6 +679,17 @@ Stated deliberately. A known limitation is a design boundary; an unstated one is
 
 **Operational**
 
+- **Durable idempotency is enforced by the schema, but exercised only
+  in-memory.** The default repository is in-process, so a clean clone
+  reconciles 5,000 records with no database to install. That means the
+  "running twice posts nothing twice" guarantee is verified *within* a process:
+  the second `post()` of an entry is refused, all 64 of them. It is **not**
+  verified across two separate invocations, because a fresh process starts with
+  an empty book. The real cross-process guarantee is the `UNIQUE` index on
+  `journal_entries.idempotency_key` in `persistence/schema.sql`, which is
+  written and matches the in-memory behaviour — but no Postgres-backed test
+  runs in CI yet.
+
 - **Not multi-tenant.** Single merchant, single run context. No authentication or
   authorisation layer.
 - **Resumability is per-run.** Partially completed runs do not leave half-posted books, but

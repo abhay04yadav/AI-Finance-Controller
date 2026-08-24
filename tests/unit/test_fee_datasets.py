@@ -54,17 +54,28 @@ def recoverable_rates(dataset: Path) -> list[float]:
 # ==========================================================================
 
 
-def test_the_default_rate_equals_l2s_fallback() -> None:
-    """This is the whole reason the other tests exist.
+def test_the_default_dataset_rate_is_not_l2s_fallback() -> None:
+    """The demo dataset must not sit on the fallback.
 
-    If this ever stops being true the warning can be relaxed — but while it
-    holds, the 2.00% dataset cannot distinguish a working fee model from one
-    that returns its default and nothing else.
+    Two things go wrong when it does. A fee model that never ran would return
+    0.02, be compared against a planted 0.02, and pass. And the demo prints
+    "Inferred MDR: 2.0000%", which is indistinguishable from a hardcoded
+    constant to anyone watching — a round number is not evidence.
     """
     l2_fallback = 0.02  # §4.2 step 5
-    assert l2_fallback == PLANTED_FEE_RATE
-    assert abs(l2_fallback - PLANTED_FEE_RATE) < TOLERANCE, (
-        "a fee model that never runs would pass the gate 6 check on this dataset"
+    assert l2_fallback != PLANTED_FEE_RATE
+    assert abs(PLANTED_FEE_RATE - l2_fallback) > TOLERANCE, (
+        f"the demo dataset plants {PLANTED_FEE_RATE:.4%}, too close to the "
+        f"{l2_fallback:.2%} fallback to prove inference happened"
+    )
+
+
+def test_the_demo_rate_is_not_a_round_number() -> None:
+    """"Inferred MDR: 2.0000%" persuades nobody. The number has to be one that
+    could only have come from the data."""
+    basis_points = PLANTED_FEE_RATE * 10_000
+    assert basis_points % 5 != 0, (
+        f"{PLANTED_FEE_RATE:.4%} is a round slab; pick a rate nobody would hardcode"
     )
 
 

@@ -309,14 +309,14 @@ def test_stale_generator_version_is_refused(tmp_path: Path) -> None:
 # ==========================================================================
 
 
-def test_stub_agent_scores_zero(tmp_path: Path) -> None:
-    """Built before the agent works, and it should score 0%. That is correct.
-
-    A harness that cannot report a failing score cannot be trusted to report a
-    passing one.
-    """
-    ds = ensure_dataset(tmp_path / "seed42", 42, 200)
-    m = evaluate(ds)
+def test_an_agent_that_answers_nothing_scores_zero() -> None:
+    """A harness that cannot report a failing score cannot be trusted to report
+    a passing one. Held against an empty result rather than a stub agent, since
+    the pipeline became real at gate 5."""
+    t = truth(
+        {"UTR-1": ["ORD-1"]}, [("ORD-9", "AUTO_REFUNDED")]
+    )
+    m = score(t, RunResult(), settings=SETTINGS)
     assert m.total > 0
     assert m.planted > 0
     assert m.match_rate == 0.0
@@ -324,6 +324,16 @@ def test_stub_agent_scores_zero(tmp_path: Path) -> None:
     assert m.exception_recall == 0.0
     assert m.llm_calls == 0
     assert len(m.missed) == m.planted
+
+
+def test_the_real_pipeline_now_matches_and_stays_exact(tmp_path: Path) -> None:
+    """Gate 5: L1 is wired in, so the harness scores real work — and every
+    claim it makes is exactly right (§4.1)."""
+    ds = ensure_dataset(tmp_path / "seed42", 42, 200)
+    m = evaluate(ds)
+    assert m.attempted > 0
+    assert m.match_precision == 1.0
+    assert m.llm_calls == 0
 
 
 def test_a_perfect_oracle_would_score_one_hundred(tmp_path: Path) -> None:

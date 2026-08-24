@@ -158,3 +158,130 @@ class Record:
     def __str__(self) -> str:
         arrow = "+" if self.is_inflow else "-"
         return f"{self.source}:{self.external_id} {arrow}{self.amount} {self.value_date}"
+
+
+@dataclass(frozen=True, slots=True)
+class MatchProposal:
+    """One strategy's claim that a bank credit is explained by these ledger rows.
+
+    A proposal is not yet a match: the orchestrator accepts it, and only records
+    still unclaimed are passed to the next strategy (§5.4, chain of
+    responsibility). Every proposal carries the reason it was made and the
+    evidence it rested on, because no automated decision may post without one
+    (§2.7 rule 4).
+    """
+
+    bank_utr: str
+    ledger_ids: frozenset[str]
+    confidence: float
+    strategy: str
+    reason: str
+    evidence: tuple[str, ...] = ()
+    settlement_id: str | None = None
+
+    def __post_init__(self) -> None:
+        if not 0.0 <= self.confidence <= 1.0:
+            raise ValueError(f"confidence out of range: {self.confidence}")
+        if not self.ledger_ids:
+            raise ValueError(f"proposal for {self.bank_utr} explains nothing")
+        if not self.reason.strip():
+            raise ValueError(f"proposal for {self.bank_utr} carries no reason")
+
+
+@dataclass(frozen=True, slots=True)
+class JournalLine:
+    """One side of one account movement. Exactly one of debit/credit is set."""
+
+    account: str
+    debit_paise: int = 0
+    credit_paise: int = 0
+
+    def __post_init__(self) -> None:
+        if self.debit_paise and self.credit_paise:
+            raise ValueError(f"{self.account} line is both a debit and a credit")
+        if self.debit_paise < 0 or self.credit_paise < 0:
+            raise ValueError(
+                f"{self.account} line carries a negative amount — flip the side instead"
+            )
+
+
+@dataclass(frozen=True, slots=True)
+class JournalEntry:
+    """A balanced double-entry posting. Guide §4.5, §9.4.
+
+    `assert_balanced()` runs before anything can be persisted. A reconciliation
+    tool that produces unbalanced books is worse than none, so an unbalanced
+    entry is a bug that raises rather than a value that flows.
+    """
+
+    idempotency_key: str
+    entry_date: date
+    narration: str
+    lines: tuple[JournalLine, ...]
+    #: Provenance, for the audit trail (§9.3): who decided this, on what.
+    source_utr: str = ""
+    ledger_ids: frozenset[str] = frozenset()
+    settlement_id: str | None = None
+    confidence: float = 0.0
+    strategy: str = ""
+
+    def __post_init__(self) -> None:
+        if not self.narration.strip():
+            # §2.7 rule 4 / §4.5: no entry may post without a justification.
+            raise ValueError(f"entry {self.idempotency_key} has no narration")
+        if not self.lines:
+            raise ValueError(f"entry {self.idempotency_key} has no lines")
+
+    @property
+    def total_debits(self) -> int:
+        return sum(line.debit_paise for line in self.lines)
+
+    @property
+    def total_credits(self) -> int:
+        return sum(line.credit_paise for line in self.lines)
+
+    def assert_balanced(self) -> None:
+        if self.total_debits != self.total_credits:
+            raise ValueError(
+                f"unbalanced entry {self.idempotency_key}: "
+                f"debits {self.total_debits} != credits {self.total_credits}"
+            )
+
+    def amount_for(self, account: str) -> int:
+        """Signed movement on one account: positive debit, negative credit."""
+        return sum(
+            line.debit_paise - line.credit_paise
+            for line in self.lines
+            if line.account == account
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class CashPosition:
+    """What is in the bank, what is coming, and what is not understood."""
+
+    #: Money we can explain: the bank ledger less whatever sits in suspense.
+    confirmed_in_bank: int = 0
+    #: The whole BANK ledger balance, which must equal the bank statement.
+    bank_ledger_total: int = 0
+    in_transit: int = 0
+    in_suspense: int = 0
+    revenue_recognised: int = 0
+    fee_expense: int = 0
+    gst_claimable: int = 0
+    rounding_writeoff: int = 0
+    refunds: int = 0
+
+    #: Entries that explain a match. Suspense postings are counted
+    #: separately: they are money parked, not books closed.
+    entries_posted: int = 0
+    suspense_entries: int = 0
+    pending_review: int = 0
+    pending_review_paise: int = 0
+    exceptions: int = 0
+    exceptions_paise: int = 0
+
+    @property
+    def unreconciled_paise(self) -> int:
+        """The one number that answers "how much do I still not understand?"."""
+        return self.in_suspense

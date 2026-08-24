@@ -17,6 +17,8 @@ class Settings:
     refund_lookback_days: int = 45
     rounding_tolerance_paise: int = 50
     max_candidates: int = 5
-    solver_budget_ms: int = 50
+    #: Bounded in NODES, not milliseconds. A wall-clock budget made the same
+    #: seed score differently on consecutive runs, which §9.1 forbids.
+    solver_node_budget: int = 40_000
     llm_budget_ratio: float = 0.10
     gst_rate: float = 0.18

@@ -386,18 +386,25 @@ def test_only_settlement_records_carry_detail(loaded) -> None:
                 rec.settlement()
 
 
-def test_implied_fee_rate_inverts_the_documented_model(loaded) -> None:
+def test_implied_fee_rate_inverts_the_documented_model(dataset: Path, loaded) -> None:
     """§4.2: r = (1 - net/gross) / 1.18. Settlements with an unitemised
-    deduction are excluded — there the shortfall is a refund, not fee."""
+    deduction are excluded — there the shortfall is a refund, not fee.
+
+    Compared against what the answer key actually planted, not a hardcoded
+    2.00%: the demo rate is deliberately non-round so that recovering it means
+    something (§4.2).
+    """
+    import json
     import statistics
 
+    planted = json.loads((dataset / "truth.json").read_text(encoding="utf-8"))["fee_rate"]
     rates = [
         rec.settlement().implied_fee_rate(0.18)
         for rec in loaded.by_source(Source.SETTLEMENT)
         if rec.settlement().unitemised_paise == 0
     ]
     assert rates
-    assert abs(statistics.median(rates) - 0.02) < 0.001
+    assert abs(statistics.median(rates) - planted) < 0.001
 
 
 def test_unitemised_paise_reveals_a_cross_period_refund(loaded) -> None:

@@ -25,7 +25,15 @@ from typing import Any
 from core.config import Settings
 from core.console import configure_stdout
 from core.run_result import RunResult
-from eval.metrics import BUCKET_EDGES, Bucket, Metrics, bucket_of, render, render_multi_seed
+from eval.metrics import (
+    BUCKET_EDGES,
+    Bucket,
+    Metrics,
+    StrategyStats,
+    bucket_of,
+    render,
+    render_multi_seed,
+)
 from pipeline.factory import build_pipeline
 
 RUNS_DIR = Path("eval") / "runs"
@@ -111,6 +119,19 @@ def score(
         for label, _, _ in BUCKET_EDGES
     )
 
+    # Per-strategy, so each layer is judged on its own claims. L1 declares
+    # certainty and is held to exactly 100% (§4.1); later layers are allowed to
+    # be uncertain, and a blended figure would let a wrong L1 hide.
+    per_strategy: dict[str, list[int]] = {}
+    for utr, m in sorted(result.matches.items()):
+        tally = per_strategy.setdefault(m.strategy, [0, 0])
+        tally[0] += 1
+        tally[1] += int(is_correct(m.ledger_ids, mappings.get(utr, [])))
+    by_strategy = tuple(
+        StrategyStats(name=name, attempted=t[0], correct=t[1])
+        for name, t in sorted(per_strategy.items())
+    )
+
     auto_posted = result.auto_posted(settings.auto_post_threshold)
 
     return Metrics(
@@ -134,6 +155,28 @@ def score(
         llm_cost_paise=result.llm_cost_paise,
         cost_per_100_paise=(result.llm_cost_paise / total * 100) if total else 0.0,
         calibration=calibration,
+        by_strategy=by_strategy,
+        inferred_fee_rate=result.fee_rate,
+        planted_fee_rate=truth.get("fee_rate"),
+        fee_model_summary=result.fee_model_summary,
+        books=(
+            {
+                "entries": result.cash_position.entries_posted,
+                "confirmed_in_bank": result.cash_position.confirmed_in_bank,
+                "in_transit": result.cash_position.in_transit,
+                "in_suspense": result.cash_position.in_suspense,
+                "revenue": result.cash_position.revenue_recognised,
+                "fee_expense": result.cash_position.fee_expense,
+                "gst_claimable": result.cash_position.gst_claimable,
+                "rounding_writeoff": result.cash_position.rounding_writeoff,
+                "pending_review": result.cash_position.pending_review,
+                "pending_review_paise": result.cash_position.pending_review_paise,
+                "exceptions": result.cash_position.exceptions,
+                "exceptions_paise": result.cash_position.exceptions_paise,
+            }
+            if result.cash_position
+            else {}
+        ),
         elapsed_s=elapsed_s,
         throughput=(total / elapsed_s) if elapsed_s > 0 else 0.0,
         layer_timings_ms=dict(result.layer_timings_ms),

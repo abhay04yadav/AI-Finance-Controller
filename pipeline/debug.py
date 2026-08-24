@@ -82,6 +82,35 @@ def _rupees(paise: int) -> str:
     return money_str(paise)
 
 
+def show_l2(dataset: Path) -> None:
+    """What the fee model learned, and from how much evidence (§4.2)."""
+    from pipeline.factory import build_pipeline
+
+    result = build_pipeline().run(dataset)
+    print(f"L2 - FEE MODEL INFERENCE: {dataset}")
+    print(console_rule(66))
+    if result.fee_rate is None:
+        print("  nothing inferred — no confirmed settlements to learn from")
+        return
+    print(f"  {result.fee_model_summary}")
+    print()
+    print("  The MDR was never supplied. It is derived from the settlements L1")
+    print("  confirmed, which is why this runs on any merchant's export with no")
+    print("  configuration at all (section 2.3).")
+    print()
+    from matching.fee_model import FeeModel
+
+    model = FeeModel(rate=result.fee_rate)
+    print(f"  {'gross':>14}{'-> net':>14}{'-> gross':>14}{'drift':>10}")
+    for gross in (100_00, 800_000, 8_764_321):
+        net = model.expected_net(gross)
+        back = model.expected_gross(net)
+        print(
+            f"  {_rupees(gross):>14}{_rupees(net):>14}{_rupees(back):>14}"
+            f"{back - gross:>8} p"
+        )
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="pipeline.debug")
     parser.add_argument("--dataset", type=Path, default=Path("data") / "seed42")
@@ -98,6 +127,9 @@ def main(argv: list[str] | None = None) -> int:
     stage = (args.stage or "L0").upper()
     if stage == "L0":
         show_l0(args.dataset)
+        return 0
+    if stage == "L2":
+        show_l2(args.dataset)
         return 0
 
     print(f"stage {stage} is not implemented yet — it arrives with its own gate")

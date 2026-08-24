@@ -79,6 +79,11 @@ class Batch:
     holiday_shifted: bool = False
     #: MISSING_IN_LEDGER: money arrived, the merchant never recorded the sale.
     orders_hidden_from_ledger: bool = False
+    #: Whether this settlement appears in the settlement report the merchant
+    #: actually holds. Reports are fetched for a bounded window, so credits
+    #: older than it have no report rows — no bridge, no join key, and the
+    #: genuine N:1 problem of §1.4. These are what L3 exists to solve.
+    in_report: bool = True
 
     def gross(self, world: World) -> int:
         """What the customers were charged. Fees are computed on this."""

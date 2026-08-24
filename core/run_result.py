@@ -21,7 +21,24 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from core.models import CashPosition, JournalEntry
 from core.reason_codes import ReasonCode
+
+
+@dataclass(frozen=True, slots=True)
+class ReviewItem:
+    """A prepared entry awaiting a human decision. Guide §4.5, §8.4.
+
+    Carries the entry that WOULD be posted, not just the suggested match:
+    showing the prepared double-entry is what turns a two-minute investigation
+    into a two-second Approve/Reject.
+    """
+
+    utr: str
+    ledger_ids: frozenset[str]
+    confidence: float
+    reason: str
+    prepared_entry: JournalEntry
 
 
 @dataclass(frozen=True, slots=True)
@@ -84,6 +101,16 @@ class RunResult:
     llm_cost_paise: int = 0
     #: Per-layer wall time, for the --profile answer to "which layer is slow?" (§9.6)
     layer_timings_ms: dict[str, float] = field(default_factory=dict)
+    #: The MDR the system LEARNED. None when nothing could be inferred.
+    #: Reported because "we were never told this" is the point (§2.3).
+    fee_rate: float | None = None
+    fee_model_summary: str = ""
+    #: The books, once L5 has posted (§4.5). Empty before gate 8.
+    entries: tuple[JournalEntry, ...] = ()
+    #: Matches confident enough to show but not to post — the review queue.
+    review_queue: tuple[ReviewItem, ...] = ()
+    cash_position: CashPosition | None = None
+    duplicate_postings_refused: int = 0
 
     def auto_posted(self, threshold: float) -> int:
         """Matches confident enough to post without asking a human (§4.5)."""

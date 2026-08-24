@@ -54,8 +54,24 @@ def build_pipeline(*, no_llm: bool = False, no_fee_model: bool = False) -> Agent
     """Wire an agent.
 
     `no_llm` selects the NullAdjudicator path (§4.4) and `no_fee_model` disables
-    L2 so its contribution can be quantified by ablation (§7.5). Both are
-    accepted now so the eval's flags are stable from gate 3 onward; neither
-    changes anything while the agent is a stub.
+    L2 so its contribution can be quantified by ablation (§7.5). Layers appear
+    here as their gates land; the eval never changes, because it only ever sees
+    `RunResult`.
     """
-    return StubAgent()
+    from core.config import Settings
+    from core.dates import BusinessCalendar
+    from matching.registry import build_strategies
+    from pipeline.orchestrator import ReconciliationPipeline
+
+    settings = Settings()
+    # ONE calendar instance, shared by every layer that reasons about dates.
+    # Two would make planted HOLIDAY_SHIFT cases unsolvable by construction,
+    # and that bug looks exactly like a matcher failure (§5.1).
+    calendar = BusinessCalendar()
+
+    return ReconciliationPipeline(
+        build_strategies(no_fee_model=no_fee_model),
+        calendar=calendar,
+        settings=settings,
+        fee_model_enabled=not no_fee_model,
+    )
