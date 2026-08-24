@@ -704,6 +704,16 @@ invented:
 - **Escrow account, Tp+0/Tp+1 remittance, permitted credits and debits, no float
   interest** — RBI, *Guidelines on Regulation of Payment Aggregators and Payment Gateways*
 
+### Design documents
+
+The full specification this was built to, and the gate-by-gate review guide it
+was checked against, are in [`docs/`](docs/):
+
+- [`docs/AI Finance Controller.md`](docs/AI%20Finance%20Controller.md) — implementation guide.
+  The `§` references throughout the code (`§4.1`, `§6.2`, …) point here.
+- [`docs/AI Finance Controller — Review Guide.md`](docs/AI%20Finance%20Controller%20%E2%80%94%20Review%20Guide.md)
+  — the 14 verification gates, each with the number it has to hit.
+
 ---
 
 <div align="center">

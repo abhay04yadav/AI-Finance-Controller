@@ -69,8 +69,12 @@ class Batch:
     #: settlement report — which is what makes the batch total unexplainable
     #: without a wider refund search (§4.3b).
     refund_ids: list[str] = field(default_factory=list)
-    #: ROUNDING_DRIFT: ±1–50 paise of gateway fee rounding.
+    #: ROUNDING_DRIFT: +/- 1-50 paise of gateway fee rounding.
     fee_adjustment_paise: int = 0
+    #: A different MDR slab for this settlement — an international card, say,
+    #: at 3.5% instead of the merchant's domestic rate (§1.5, §4.2 step 3).
+    #: L2 must survive these as outliers, which is why it takes a median.
+    fee_rate_override: float | None = None
     #: True when T+2 landed on a non-working day and settlement slipped.
     holiday_shifted: bool = False
     #: MISSING_IN_LEDGER: money arrived, the merchant never recorded the sale.
@@ -80,9 +84,13 @@ class Batch:
         """What the customers were charged. Fees are computed on this."""
         return sum(world.orders[oid].amount_paise for oid in self.order_ids)
 
+    def rate(self, world: World) -> float:
+        """The MDR applied to this settlement."""
+        return self.fee_rate_override if self.fee_rate_override is not None else world.fee_rate
+
     def fee(self, world: World) -> int:
         """MDR, plus any planted rounding drift."""
-        return int(self.gross(world) * world.fee_rate) + self.fee_adjustment_paise
+        return int(self.gross(world) * self.rate(world)) + self.fee_adjustment_paise
 
     def gst(self, world: World) -> int:
         """18% GST on the fee — reclaimable by the merchant (§4.5)."""

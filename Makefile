@@ -23,7 +23,7 @@ SEEDS   ?=
 NO_LLM  ?=
 DATA    ?= data/seed$(SEED)
 
-.PHONY: help venv setup generate match eval demo test lint typecheck layer-check drift-check tree clean
+.PHONY: help venv setup generate fee-datasets match eval demo test lint typecheck layer-check drift-check tree clean
 
 help:
 	@echo "AI Finance Controller"
@@ -32,6 +32,7 @@ help:
 	@echo "  make setup         venv + install dependencies (editable + dev extras)"
 	@echo ""
 	@echo "  make generate      build a seeded synthetic dataset      [gate 2]"
+	@echo "  make fee-datasets  non-round MDR fixtures for L2         [gate 6]"
 	@echo "  make match         run the reconciliation pipeline       [gate 8]"
 	@echo "  make eval          score the agent against truth.json    [gate 3]"
 	@echo "  make demo          generate + match + eval, demo scale   [gate 14]"
@@ -55,6 +56,14 @@ setup: venv
 
 generate:
 	$(PY) -m generator.generate --seed $(SEED) --scale $(SCALE) --out $(DATA)
+
+# Fee-model fixtures for gate 6. The default 2.00% dataset CANNOT validate L2:
+# it is the same value L2 falls back to, so a fee model that never runs would
+# still appear to recover it. These plant non-round rates and a second MDR slab.
+fee-datasets:
+	$(PY) -m generator.generate --seed $(SEED) --scale $(SCALE) --fee-rate 0.0175 --out data/fee0175
+	$(PY) -m generator.generate --seed $(SEED) --scale $(SCALE) --fee-rate 0.0235 --out data/fee0235
+	$(PY) -m generator.generate --seed $(SEED) --scale $(SCALE) --fee-rate 0.0175 --intl-ratio 0.10 --out data/feeslab
 
 match:
 	$(PY) -m pipeline.orchestrator --dataset $(DATA)

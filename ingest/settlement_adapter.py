@@ -16,8 +16,9 @@ totals could never tie to the file. Instead each *settlement* becomes one Record
     external_id  the settlement_id            (unique, so the §4.0 step 5
                                                duplicate rule holds naturally)
     amount       the net actually paid out
+    detail       typed gross / fee / gst / net — what L1 and L2 read
     refs         {settlement_id, utr, every order_id in the batch}
-    raw          the batch totals plus the ordered member list
+    raw          identifiers and dates, for the audit trail; never money
 
 That is precisely what an Adapter is for: the quirk dies at the boundary and no
 layer downstream ever learns that this file repeats itself (§5.3).
@@ -28,7 +29,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from core.models import Direction, Record, Source
+from core.models import Direction, Record, SettlementDetail, Source
 from ingest.normalizer import (
     IngestError,
     IngestFailure,
@@ -129,14 +130,21 @@ class SettlementAdapter:
                     ),
                     narration=f"{settlement_id} / {batch['utr']}",
                     refs=extract_refs(settlement_id, batch["utr"], *members),
+                    # Typed money, so L1's gross check and L2's (gross, net)
+                    # inference never read a `dict[str, Any]` (§4.1, §4.2).
+                    detail=SettlementDetail(
+                        gross=batch["gross"],
+                        fee=batch["fee"],
+                        gst=batch["gst"],
+                        net=batch["net"],
+                        utr=batch["utr"],
+                        order_ids=tuple(members),
+                    ),
+                    # `raw` stays for the audit trail (§9.3) — never for money.
                     raw={
                         "settlement_id": settlement_id,
                         "utr": batch["utr"],
                         "settle_date": batch["settle_date"].isoformat(),
-                        "gross_paise": batch["gross"].paise,
-                        "fee_paise": batch["fee"].paise,
-                        "gst_paise": batch["gst"].paise,
-                        "net_paise": batch["net"].paise,
                         "order_ids": members,
                     },
                 )

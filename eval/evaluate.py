@@ -16,15 +16,14 @@ something. `build_pipeline()` is the one seam, and everything past it is opaque.
 from __future__ import annotations
 
 import argparse
-import contextlib
 import json
-import sys
 import time
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from core.config import Settings
+from core.console import configure_stdout
 from core.run_result import RunResult
 from eval.metrics import BUCKET_EDGES, Bucket, Metrics, bucket_of, render, render_multi_seed
 from pipeline.factory import build_pipeline
@@ -237,8 +236,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    with contextlib.suppress(Exception):
-        sys.stdout.reconfigure(encoding="utf-8")
+    configure_stdout()
 
     settings = Settings()
 

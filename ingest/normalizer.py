@@ -55,7 +55,7 @@ class IngestFailure:
     reason_code: ReasonCode = ReasonCode.INGEST_ERROR
 
     def describe(self) -> str:
-        return f"{self.source}:{self.line_no} — {self.reason}"
+        return f"{self.source}:{self.line_no}: {self.reason}"
 
 
 @dataclass(frozen=True, slots=True)

@@ -24,7 +24,9 @@ import json
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
-from core.money import Money
+from core.console import glyph
+from core.console import money as money_str
+from core.console import rule as console_rule
 
 #: Confidence bands from §2.5 / §7.4. The top band is the auto-post band, and
 #: its precision is the number a controller actually cares about: "everything
@@ -141,9 +143,10 @@ def pct(value: float) -> str:
 
 def render(m: Metrics, *, show_timing: bool = True) -> str:
     """The §7.4 marksheet."""
-    rule = "─" * 60
+    rule = console_rule(60)
+    dash = glyph("dash")
     out: list[str] = [
-        f"RECONCILIATION REPORT — {m.total} credits, {m.scale} orders, seed {m.seed}",
+        f"RECONCILIATION REPORT {dash} {m.total} credits, {m.scale} orders, seed {m.seed}",
         rule,
         f"Match rate            {pct(m.match_rate):>7}   ({m.attempted}/{m.total})",
         f"Match precision       {pct(m.match_precision):>7}   "
@@ -162,7 +165,7 @@ def render(m: Metrics, *, show_timing: bool = True) -> str:
     else:
         out.append(f"LLM calls             {m.llm_calls:>7}")
     out.append(
-        f"Cost per 100 records  {Money(round(m.cost_per_100_paise))!s:>7}"
+        f"Cost per 100 records  {money_str(round(m.cost_per_100_paise)):>9}"
     )
 
     out += [rule, "Confidence calibration"]
@@ -180,7 +183,7 @@ def render(m: Metrics, *, show_timing: bool = True) -> str:
     if m.missed:
         out.append(f"Missed ({len(m.missed)}):")
         for ref, kind in m.missed[:10]:
-            out.append(f"  {ref} — {kind}")
+            out.append(f"  {ref} {dash} {kind}")
         if len(m.missed) > 10:
             out.append(f"  ... and {len(m.missed) - 10} more")
     else:
@@ -202,14 +205,14 @@ def render_multi_seed(runs: list[Metrics]) -> str:
     """Mean ± standard deviation across seeds. A single seed is an anecdote."""
     import statistics
 
-    rule = "─" * 60
-    out = [f"MULTI-SEED REPORT — {len(runs)} seeds: "
+    rule = console_rule(60)
+    out = [f"MULTI-SEED REPORT {glyph('dash')} {len(runs)} seeds: "
            f"{', '.join(str(r.seed) for r in runs)}", rule]
 
     def line(name: str, values: list[float]) -> str:
         mean = statistics.fmean(values)
         sd = statistics.pstdev(values) if len(values) > 1 else 0.0
-        return f"{name:<22}{pct(mean):>7}  ± {pct(sd):>6}"
+        return f"{name:<22}{pct(mean):>7}  {glyph('plusminus')} {pct(sd):>6}"
 
     out += [
         line("Match rate", [r.match_rate for r in runs]),

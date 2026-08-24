@@ -15,14 +15,14 @@ no wall-clock read anywhere, and explicit "\\n" line endings on every file.
 from __future__ import annotations
 
 import argparse
-import contextlib
-import sys
 from datetime import date, timedelta
 from pathlib import Path
 from random import Random
 
 from core.config import Settings
+from core.console import configure_stdout
 from core.dates import BusinessCalendar, DateWindow
+from core.reason_codes import ReasonCode
 from generator.injectors import build_registry, count_for
 from generator.validate import validate
 from generator.world import Batch, Order, World
@@ -46,8 +46,17 @@ MIN_PERIOD_DAYS = 10
 MAX_PERIOD_DAYS = 120
 
 #: The rate the merchant negotiated. Never told to the agent, which must infer
-#: it from confident matches (§2.3). 2.00% is the common card slab.
+#: it from confident matches (§2.3). 2.00% is the common domestic card slab.
+#:
+#: WARNING: 2.00% is also the fallback L2 returns when it has too few samples
+#: (§4.2 step 5). A dataset at exactly this rate therefore CANNOT prove that
+#: inference works — an L2 that never runs would return 0.02 and pass a
+#: "within 0.1% of truth" check. Always validate the fee model against a rate
+#: that is not round: see --fee-rate, and tests/unit/test_fee_datasets.py.
 PLANTED_FEE_RATE = 0.02
+
+#: A different MDR slab, for international cards (§1.5 FX_OR_SLAB_VARIANCE).
+INTL_FEE_RATE = 0.035
 
 MIN_ORDER_PAISE = 50_000  # ₹500
 MAX_ORDER_PAISE = 500_000  # ₹5,000
@@ -65,7 +74,12 @@ def build_period(calendar: BusinessCalendar, scale: int) -> tuple[DateWindow, li
     return DateWindow(days[0], days[-1]), days
 
 
-def build_world(seed: int, scale: int, settings: Settings) -> World:
+def build_world(
+    seed: int,
+    scale: int,
+    settings: Settings,
+    fee_rate: float = PLANTED_FEE_RATE,
+) -> World:
     """Steps 1 and 2 of §6.2: create the truth, then replay the flow forward."""
     rng = Random(seed)
     calendar = BusinessCalendar()
@@ -74,7 +88,7 @@ def build_world(seed: int, scale: int, settings: Settings) -> World:
     world = World(
         seed=seed,
         scale=scale,
-        fee_rate=PLANTED_FEE_RATE,
+        fee_rate=fee_rate,
         gst_rate=settings.gst_rate,
         calendar=calendar,
         period=period,
@@ -126,13 +140,45 @@ def inject_failures(world: World, seed: int) -> dict[str, int]:
     return planted
 
 
-def generate(seed: int, scale: int, out_dir: Path, settings: Settings | None = None) -> dict:
+def apply_slab_variance(world: World, seed: int, ratio: float, intl_rate: float) -> int:
+    """Give some settlements a different MDR slab (§4.2 step 3, §1.5).
+
+    Opt-in rather than part of the standard dataset, so the default stays
+    single-slab and gate 5's expectations do not move. Its purpose is to prove
+    L2 takes a MEDIAN: a handful of international rows at 3.5% must not drag the
+    inferred domestic rate. A mean would be dragged, and would then mis-price
+    every credit downstream.
+    """
+    if ratio <= 0:
+        return 0
+    rng = Random(f"{seed}:slab")
+    pool = [b for b in world.batches if b.fee_rate_override is None and b.order_ids]
+    count = max(1, round(ratio * len(pool)))
+    for batch in rng.sample(pool, min(count, len(pool))):
+        batch.fee_rate_override = intl_rate
+        world.record(batch.utr, ReasonCode.FX_OR_SLAB_VARIANCE)
+    return count
+
+
+def generate(
+    seed: int,
+    scale: int,
+    out_dir: Path,
+    settings: Settings | None = None,
+    *,
+    fee_rate: float = PLANTED_FEE_RATE,
+    intl_ratio: float = 0.0,
+    intl_rate: float = INTL_FEE_RATE,
+) -> dict:
     """Generate a complete dataset and validate it before returning."""
     settings = settings or Settings()
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    world = build_world(seed, scale, settings)
+    world = build_world(seed, scale, settings, fee_rate=fee_rate)
     planted = inject_failures(world, seed)
+    slabbed = apply_slab_variance(world, seed, intl_ratio, intl_rate)
+    if slabbed:
+        planted[str(ReasonCode.FX_OR_SLAB_VARIANCE)] = slabbed
 
     # -- Steps 4 and 5: write the files, then the answer key ---------------
     write_ledger(out_dir / "ledger.csv", world)
@@ -153,22 +199,44 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--scale", type=int, default=500, help="number of orders")
     parser.add_argument("--out", type=Path, default=None)
+    parser.add_argument(
+        "--fee-rate",
+        type=float,
+        default=PLANTED_FEE_RATE,
+        help=(
+            "MDR to plant. Use a NON-ROUND rate (0.0175, 0.0235) to validate L2: "
+            "the default 0.02 equals L2's own fallback, so a broken fee model "
+            "would still appear to recover it."
+        ),
+    )
+    parser.add_argument(
+        "--intl-ratio",
+        type=float,
+        default=0.0,
+        help="share of settlements on a different MDR slab (proves the median holds)",
+    )
+    parser.add_argument("--intl-rate", type=float, default=INTL_FEE_RATE)
     parser.add_argument("--quiet", action="store_true")
     args = parser.parse_args(argv)
 
     out_dir = args.out or Path("data") / f"seed{args.seed}"
-    result = generate(args.seed, args.scale, out_dir)
+    result = generate(
+        args.seed,
+        args.scale,
+        out_dir,
+        fee_rate=args.fee_rate,
+        intl_ratio=args.intl_ratio,
+        intl_rate=args.intl_rate,
+    )
 
     if args.quiet:
         return 0
 
-    # Windows consoles default to cp1252 and cannot encode the rupee sign.
-    with contextlib.suppress(Exception):
-        sys.stdout.reconfigure(encoding="utf-8")
+    configure_stdout()
 
     s = result["stats"]
     print(f"dataset written to {out_dir}  (generator v{GENERATOR_VERSION})")
-    print(f"  seed {args.seed} · scale {args.scale}")
+    print(f"  seed {args.seed} | scale {args.scale} | MDR {args.fee_rate:.4%}")
     print(
         f"  ledger {s['ledger_rows']} rows · settlement {s['settlement_rows']} · "
         f"bank {s['bank_rows']}"

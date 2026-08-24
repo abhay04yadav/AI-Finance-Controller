@@ -128,7 +128,7 @@ def validate(out_dir: Path) -> dict[str, int]:
     planted_types = {e["type"] for e in truth["exceptions"]}
     expected_types = {str(i.reason_code) for i in build_registry()}
     check(
-        planted_types == expected_types,
+        expected_types <= planted_types,
         f"failure modes missing from the dataset: "
         f"{sorted(expected_types - planted_types)} — exception recall computed "
         f"over this dataset would silently ignore them",

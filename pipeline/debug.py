@@ -14,12 +14,13 @@ rather than pretending.
 from __future__ import annotations
 
 import argparse
-import contextlib
-import sys
 import time
 from collections import Counter
 from pathlib import Path
 
+from core.console import configure_stdout
+from core.console import money as money_str
+from core.console import rule as console_rule
 from core.models import Source
 from ingest.normalizer import IngestResult, load_dataset
 
@@ -30,8 +31,8 @@ def show_l0(dataset: Path) -> IngestResult:
     result = load_dataset(dataset)
     elapsed_ms = (time.perf_counter() - t0) * 1000
 
-    print(f"L0 · INGEST & NORMALIZE — {dataset}")
-    print("─" * 66)
+    print(f"L0 - INGEST & NORMALIZE: {dataset}")
+    print(console_rule(66))
     print(f"{'source':<12}{'records':>9}{'total':>18}{'refs':>8}{'dates':>26}")
     for source in (Source.LEDGER, Source.SETTLEMENT, Source.BANK):
         rows = result.by_source(source)
@@ -47,7 +48,7 @@ def show_l0(dataset: Path) -> IngestResult:
             f"{f'{lo} .. {hi}':>26}"
         )
 
-    print("─" * 66)
+    print(console_rule(66))
     print(f"{'total':<12}{len(result.records):>9}    parsed in {elapsed_ms:.1f} ms")
 
     if result.failures:
@@ -77,9 +78,8 @@ def show_l0(dataset: Path) -> IngestResult:
 
 
 def _rupees(paise: int) -> str:
-    from core.money import Money
-
-    return str(Money(paise))
+    """Terminal-safe money, so a cp1252 console cannot kill the report."""
+    return money_str(paise)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -89,8 +89,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--profile", action="store_true")
     args = parser.parse_args(argv)
 
-    with contextlib.suppress(Exception):
-        sys.stdout.reconfigure(encoding="utf-8")
+    configure_stdout()
 
     if not args.dataset.exists():
         print(f"no dataset at {args.dataset} — run `make generate` first")

@@ -351,11 +351,63 @@ def test_one_record_per_settlement_not_per_row(dataset: Path, loaded) -> None:
 def test_settlement_record_carries_its_members_and_totals(loaded) -> None:
     """The bridge document: order IDs on one side, the UTR on the other."""
     rec = loaded.by_source(Source.SETTLEMENT)[0]
-    assert rec.raw["order_ids"]
-    assert rec.raw["utr"].startswith("UTR-")
-    assert rec.amount.paise == rec.raw["net_paise"]
-    assert rec.raw["gross_paise"] > rec.raw["net_paise"]
-    assert rec.refs >= {rec.raw["utr"], rec.external_id}
+    detail = rec.settlement()
+    assert detail.order_ids
+    assert detail.utr.startswith("UTR-")
+    assert rec.amount == detail.net
+    assert detail.gross.paise > detail.net.paise
+    assert rec.refs >= {detail.utr, rec.external_id}
+
+
+def test_settlement_money_is_typed_not_a_raw_dict(loaded) -> None:
+    """L1 needs gross for its sum check and L2 needs (gross, net) pairs. Behind
+    `dict[str, Any]` a typo would silently yield a wrong fee rate; as fields,
+    mypy --strict covers the path."""
+    from core.money import Money
+
+    for rec in loaded.by_source(Source.SETTLEMENT):
+        d = rec.settlement()
+        assert isinstance(d.gross, Money)
+        assert isinstance(d.fee, Money)
+        assert isinstance(d.gst, Money)
+        assert isinstance(d.net, Money)
+        assert d.charges == d.fee + d.gst
+    # money must not be reachable through raw at all any more
+    assert not {k for k in loaded.by_source(Source.SETTLEMENT)[0].raw if "paise" in k}
+
+
+def test_only_settlement_records_carry_detail(loaded) -> None:
+    for rec in loaded.records:
+        if rec.source is Source.SETTLEMENT:
+            assert rec.detail is not None
+        else:
+            assert rec.detail is None
+            with pytest.raises(TypeError, match="not a settlement record"):
+                rec.settlement()
+
+
+def test_implied_fee_rate_inverts_the_documented_model(loaded) -> None:
+    """§4.2: r = (1 - net/gross) / 1.18. Settlements with an unitemised
+    deduction are excluded — there the shortfall is a refund, not fee."""
+    import statistics
+
+    rates = [
+        rec.settlement().implied_fee_rate(0.18)
+        for rec in loaded.by_source(Source.SETTLEMENT)
+        if rec.settlement().unitemised_paise == 0
+    ]
+    assert rates
+    assert abs(statistics.median(rates) - 0.02) < 0.001
+
+
+def test_unitemised_paise_reveals_a_cross_period_refund(loaded) -> None:
+    """The shortfall L3 has to explain (§4.3b)."""
+    shortfalls = [
+        rec.settlement().unitemised_paise
+        for rec in loaded.by_source(Source.SETTLEMENT)
+    ]
+    assert any(s > 0 for s in shortfalls), "no cross-period refund is visible"
+    assert all(s >= 0 for s in shortfalls)
 
 
 def test_settlement_refs_bridge_both_sides(loaded) -> None:

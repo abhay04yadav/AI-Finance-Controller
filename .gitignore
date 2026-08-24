@@ -11,10 +11,6 @@ venv/
 # Secrets — .env.example is checked in, .env never is (§9.8)
 .env
 
-# Design docs stay local. The implementation guide and the Review Guide are
-# working documents, not deliverables — they are not committed and not pushed.
-docs/
-
 # The build log behind the submission answer "What broke, and how you got out"
 # (§0.1). A working document — kept local, never committed, never pushed.
 broke_fixed.txt

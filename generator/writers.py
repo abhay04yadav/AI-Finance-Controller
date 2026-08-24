@@ -185,6 +185,13 @@ def write_truth(path: Path, world: World) -> dict[str, Any]:
         "generated_at": world.period.end.isoformat(),
         "fee_rate": world.fee_rate,
         "gst_rate": world.gst_rate,
+        # Every distinct MDR present, so a multi-slab dataset can be scored
+        # against what was actually planted rather than against one headline
+        # rate (§4.2 step 3).
+        "fee_slabs": sorted(
+            {world.fee_rate}
+            | {b.fee_rate_override for b in world.batches if b.fee_rate_override}
+        ),
         "period": {
             "start": world.period.start.isoformat(),
             "end": world.period.end.isoformat(),
