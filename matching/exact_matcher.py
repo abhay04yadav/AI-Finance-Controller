@@ -67,6 +67,7 @@ class ExactMatcher:
                     ),
                     amount_paise=detail.net.paise,
                     raised_by=self.name,
+                    value_date=settlement.value_date,
                 )
                 continue
 
@@ -86,6 +87,7 @@ class ExactMatcher:
                     ),
                     amount_paise=detail.net.paise,
                     raised_by=self.name,
+                    value_date=settlement.value_date,
                 )
                 continue
             bank = bank_rows[0]
@@ -113,6 +115,7 @@ class ExactMatcher:
                     ),
                     amount_paise=detail.net.paise,
                     raised_by=self.name,
+                    value_date=settlement.value_date,
                 )
                 continue
 

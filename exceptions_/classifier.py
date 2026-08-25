@@ -19,6 +19,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass
+from datetime import date
 
 from core.models import Direction, Record
 from core.reason_codes import ReasonCode
@@ -39,6 +40,7 @@ class LedgerFinding:
     amount_paise: int
     what: str
     why: str
+    value_date: date | None = None
 
     @property
     def is_in_transit(self) -> bool:
@@ -75,6 +77,7 @@ def classify_unsettled_ledger_rows(
                     ref=row.external_id,
                     reason_code=ReasonCode.AUTO_REFUNDED,
                     amount_paise=amount,
+                    value_date=row.value_date,
                     what=(
                         f"{row.external_id} was authorised on {row.value_date} "
                         "but never captured, and no settlement covers it."
@@ -92,6 +95,7 @@ def classify_unsettled_ledger_rows(
                     ref=row.external_id,
                     reason_code=ReasonCode.LATE_AUTHORIZATION,
                     amount_paise=amount,
+                    value_date=row.value_date,
                     what=(
                         f"{row.external_id} is marked failed and no credit has "
                         "arrived for it."
@@ -110,6 +114,7 @@ def classify_unsettled_ledger_rows(
                     ref=row.external_id,
                     reason_code=ReasonCode.AWAITING_SETTLEMENT,
                     amount_paise=amount,
+                    value_date=row.value_date,
                     what=(
                         f"{row.external_id} was captured on {row.value_date} "
                         "and is not in any settlement yet."

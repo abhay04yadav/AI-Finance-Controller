@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import dataclass, field
+from datetime import date
 from typing import Protocol
 
 from core.config import Settings
@@ -34,6 +35,7 @@ class Flag:
     why: str = ""
     amount_paise: int | None = None
     raised_by: str = ""
+    value_date: date | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -195,9 +197,10 @@ class MatchContext:
         why: str = "",
         amount_paise: int | None = None,
         raised_by: str = "",
+        value_date: date | None = None,
     ) -> None:
         self.flags.append(
-            Flag(reason_code, ref, what, why, amount_paise, raised_by)
+            Flag(reason_code, ref, what, why, amount_paise, raised_by, value_date)
         )
 
 

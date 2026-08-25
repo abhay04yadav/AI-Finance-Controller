@@ -111,6 +111,42 @@ def show_l2(dataset: Path) -> None:
         )
 
 
+def show_profile(dataset: Path) -> None:
+    """Which layer is slow, and how much each one resolved (§9.6).
+
+    Deliberately does NOT import the eval harness. Precision needs the answer
+    key, and the pipeline must never be able to see its own grade — a profiler
+    that reaches for `truth.json` is one refactor away from a matcher doing the
+    same. Per-layer precision is in `make eval`, where the scoring lives.
+    """
+    from pipeline.factory import build_pipeline
+
+    result = build_pipeline().run(dataset)
+
+    print(f"PROFILE: {dataset}")
+    print(console_rule(66))
+    print(f"{'layer':<16}{'time':>12}{'share':>9}{'resolved':>11}")
+
+    total_ms = sum(result.layer_timings_ms.values()) or 1.0
+    by_strategy: dict[str, int] = {}
+    for outcome in result.matches.values():
+        by_strategy[outcome.strategy] = by_strategy.get(outcome.strategy, 0) + 1
+
+    for name, ms in result.layer_timings_ms.items():
+        resolved = by_strategy.get(name)
+        shown = str(resolved) if resolved is not None else "-"
+        print(f"{name:<16}{ms:>9.1f} ms{ms / total_ms:>8.0%}{shown:>11}")
+
+    print(console_rule(66))
+    print(f"{'total':<16}{total_ms:>9.1f} ms")
+    print(f"{'records':<16}{result.records_processed:>12}")
+    print(f"{'credits':<16}{len(result.matches) + len(result.exceptions):>12}")
+    print()
+    print(f"LLM calls {result.llm_calls}   cost {_rupees(result.llm_cost_paise)}")
+    if result.llm_calls == 0:
+        print("  the deterministic core carried the entire run")
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="pipeline.debug")
     parser.add_argument("--dataset", type=Path, default=Path("data") / "seed42")
@@ -123,6 +159,10 @@ def main(argv: list[str] | None = None) -> int:
     if not args.dataset.exists():
         print(f"no dataset at {args.dataset} — run `make generate` first")
         return 2
+
+    if args.profile:
+        show_profile(args.dataset)
+        return 0
 
     stage = (args.stage or "L0").upper()
     if stage == "L0":

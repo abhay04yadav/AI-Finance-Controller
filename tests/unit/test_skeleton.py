@@ -83,10 +83,25 @@ def test_module_imports(mod: str) -> None:
 
 
 def test_reason_codes_complete() -> None:
-    """All 12 codes from Appendix A exist."""
+    """Every code from Appendix A exists, plus one deliberate addition.
+
+    AMBIGUOUS_UNADJUDICATED is not in Appendix A. It separates "L3 found several
+    equally good answers and no adjudicator was asked" from Appendix A's
+    ADJUDICATION_REJECTED, which means "the model answered and a guardrail threw
+    the answer out". Sharing one code would make the exception page claim the AI
+    tried and failed on --no-llm runs where no AI ran at all.
+    """
     from core.reason_codes import ReasonCode
 
-    assert len(ReasonCode) == 12
+    appendix_a = {
+        "AWAITING_SETTLEMENT", "LATE_AUTHORIZATION", "AUTO_REFUNDED",
+        "CROSS_PERIOD_REFUND", "HOLIDAY_SHIFT", "DUPLICATE_UTR",
+        "MISSING_IN_LEDGER", "ROUNDING_DRIFT", "AMOUNT_MISMATCH",
+        "FX_OR_SLAB_VARIANCE", "ADJUDICATION_REJECTED", "INGEST_ERROR",
+    }
+    ours = {c.value for c in ReasonCode}
+    assert appendix_a <= ours, f"missing from Appendix A: {appendix_a - ours}"
+    assert ours - appendix_a == {"AMBIGUOUS_UNADJUDICATED"}
 
 
 def test_chart_of_accounts_complete() -> None:

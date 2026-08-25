@@ -20,9 +20,10 @@ trail, it does not belong in this file.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import date
 
 from core.models import CashPosition, JournalEntry
-from core.reason_codes import ReasonCode
+from core.reason_codes import ReasonCode, Severity, severity_of
 
 
 @dataclass(frozen=True, slots=True)
@@ -72,6 +73,23 @@ class MatchOutcome:
 
 
 @dataclass(frozen=True, slots=True)
+class ActionOffer:
+    """One thing a controller can do about an exception, as the UI sees it.
+
+    Carries only what a button needs. The behaviour lives in `exceptions_`, so
+    the UI renders whatever `is_available()` returned rather than a hardcoded
+    list — adding an action is one class and one registry line, with no
+    frontend change (§8.3).
+    """
+
+    code: str
+    label: str
+    description: str = ""
+    #: Whether performing it writes to the books.
+    posts_entry: bool = False
+
+
+@dataclass(frozen=True, slots=True)
 class ExceptionOutcome:
     """One thing the agent could not resolve, and says so.
 
@@ -84,6 +102,19 @@ class ExceptionOutcome:
     what: str = ""
     why: str = ""
     amount_paise: int | None = None
+    value_date: date | None = None
+    #: What the controller can do about it. Empty is a bug: every reason code
+    #: must offer at least one action, or the card is a report, not a worklist.
+    actions: tuple[ActionOffer, ...] = ()
+
+    @property
+    def severity(self) -> Severity:
+        return severity_of(self.reason_code)
+
+    @property
+    def is_in_transit(self) -> bool:
+        """Money on its way, not money missing (Appendix A)."""
+        return self.severity is Severity.IN_TRANSIT
 
 
 @dataclass(frozen=True, slots=True)

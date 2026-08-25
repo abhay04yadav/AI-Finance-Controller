@@ -103,6 +103,17 @@ def score(
     )
 
     planted_by_ref = {e["ref"]: e["type"] for e in truth["exceptions"]}
+
+    # A planted anomaly can end three ways: flagged as an exception, silently
+    # RESOLVED because a matcher explained the credit it belonged to, or
+    # neither. Only the third is a real miss, and only that one belongs in a
+    # sentence like "we missed N". Exception recall below is still computed
+    # exactly as §7.3 specifies — this is reported alongside it, not instead.
+    resolved_refs: set[str] = set()
+    for utr, outcome in result.matches.items():
+        if is_correct(outcome.ledger_ids, mappings.get(utr, [])):
+            resolved_refs.add(utr)
+            resolved_refs |= set(outcome.ledger_ids)
     planted = set(planted_by_ref)
     caught = {e.ref for e in result.exceptions}
     missed = tuple(
@@ -154,6 +165,12 @@ def score(
         llm_calls=result.llm_calls,
         llm_cost_paise=result.llm_cost_paise,
         cost_per_100_paise=(result.llm_cost_paise / total * 100) if total else 0.0,
+        anomalies_flagged=len(planted & caught),
+        anomalies_resolved=len((planted - caught) & resolved_refs),
+        anomalies_unhandled=tuple(
+            (ref, planted_by_ref[ref])
+            for ref in sorted(planted - caught - resolved_refs)
+        ),
         calibration=calibration,
         by_strategy=by_strategy,
         inferred_fee_rate=result.fee_rate,

@@ -121,6 +121,14 @@ class Metrics:
     inferred_fee_rate: float | None = None
     planted_fee_rate: float | None = None
     fee_model_summary: str = ""
+    #: What became of each planted anomaly. Exception recall counts only the
+    #: ones we FLAGGED, which understates a system that RESOLVED the rest —
+    #: a holiday-shifted settlement that got matched is handled, not missed.
+    #: The headline metric is left exactly as §7.3 defines it; this is the
+    #: breakdown that stops it being read as a 60% failure rate.
+    anomalies_flagged: int = 0
+    anomalies_resolved: int = 0
+    anomalies_unhandled: tuple[tuple[str, str], ...] = ()
     #: The §1.6 books-closed summary — the literal answer to the track title.
     books: dict[str, int] = field(default_factory=dict)
 
@@ -251,6 +259,19 @@ def render(m: Metrics, *, show_timing: bool = True) -> str:
             )
     else:
         out.append("  (no matches attempted)")
+
+    if m.anomalies_flagged or m.anomalies_resolved:
+        total = m.anomalies_flagged + m.anomalies_resolved + len(m.anomalies_unhandled)
+        out += [
+            rule,
+            f"Planted anomalies ({total})",
+            f"  flagged as exceptions              {m.anomalies_flagged:>4}",
+            f"  resolved by matching               {m.anomalies_resolved:>4}",
+            f"  neither                            {len(m.anomalies_unhandled):>4}"
+            + ("   <- the honest misses" if m.anomalies_unhandled else ""),
+        ]
+        for ref, kind in m.anomalies_unhandled[:5]:
+            out.append(f"      {ref} {glyph('dash')} {kind}")
 
     out.append(rule)
     if m.missed:

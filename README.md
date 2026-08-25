@@ -376,9 +376,12 @@ The abstraction boundaries are chosen so that three plausible next features stay
 
 ## Measurement
 
-> **No number appears in this section until a measured run produces it.** Cells marked `—`
-> are not yet implemented. They are filled from `make eval` output against planted ground
-> truth — never estimated, never rounded up.
+> Every number below is from `make eval` against planted ground truth — measured,
+> never estimated, and truncated rather than rounded up (99.94% prints as 99.9%).
+> Reproduce them with `make eval NO_LLM=1 SCALE=500`.
+>
+> **These are the deterministic core's numbers, with zero LLM calls.** The
+> adjudication layer is not built yet; it can raise them but must never lower them.
 >
 > The harness itself is live as of gate 3 and currently scores the system at **0.0%**,
 > because the agent is still a stub. That is the correct result: a harness that cannot
@@ -403,13 +406,25 @@ is worse than "I don't know."** Most submissions report only match rate.
 
 | Metric | Definition | Why it is on the sheet | Result |
 |---|---|---|---|
-| **Match rate** | attempted / total | Coverage | — |
-| **Match precision** | correct / attempted | **The real accuracy number** | — |
-| **Exception recall** | planted caught / planted total | Proves it hunts problems, not just easy wins | — |
-| **Auto-resolution** | conf ≥ 0.95 / total | The business value: how few rows a human still touches | — |
-| **Throughput** | records / sec | The bar asks for throughput | — |
-| **LLM calls & cost** | calls, cost per 100 records | The contrast against batch-into-LLM approaches | — |
-| **Calibration** | precision per confidence bucket | The trust argument | — |
+| **Match rate** | attempted / total | Coverage | **98.3%** (59/60) |
+| **Match precision** | correct / attempted | **The real accuracy number** | **100.0%** (59/59) |
+| **Exception recall** | planted caught / planted total | Proves it hunts problems, not just easy wins | 40.7% (11/27) — see below |
+| **Auto-resolution** | conf ≥ 0.95 / total | The business value: how few rows a human still touches | **80.0%** (48 posted) |
+| **Throughput** | records / sec | The bar asks for throughput | 507 rec/sec |
+| **LLM calls & cost** | calls, cost per 100 records | The contrast against batch-into-LLM approaches | **0 calls, ₹0.00** |
+| **Calibration** | precision per confidence bucket | The trust argument | see below |
+
+**Exception recall needs its breakdown, or it reads as a 60% failure rate.** It counts
+only the anomalies we *flagged*. Of the 27 planted, 11 were flagged, **15 were resolved
+by matching** — a holiday-shifted settlement that got matched is handled, not missed —
+and **1 was genuinely neither**. The headline metric is left exactly as §7.3 defines it
+rather than redefined to look better; the split is reported beside it.
+
+| Planted anomalies (27) | |
+|---|---|
+| flagged as exceptions | 11 |
+| resolved by matching | 15 |
+| **neither — the honest misses** | **1** (`RFND-5004`, CROSS_PERIOD_REFUND) |
 
 ### Confidence calibration
 
@@ -418,10 +433,13 @@ guessed — if the top bucket is not 100%, the threshold rises until it is.
 
 | Confidence bucket | Records | Precision |
 |---|---|---|
-| 0.95 – 1.00 · auto-post | — | — |
-| 0.85 – 0.95 | — | — |
-| 0.70 – 0.85 · human review | — | — |
-| below 0.70 · exception | — | — |
+| 0.95 – 1.00 · auto-post | 48 | **100.0%** |
+| 0.85 – 0.95 | 11 | 100.0% |
+| 0.70 – 0.85 · human review | 0 | — |
+| below 0.70 · exception | 0 | — |
+
+48 entries posted without asking a human, and **zero of them wrong**. That is the
+sentence the calibration table exists to support.
 
 ### Planned evidence
 
@@ -626,13 +644,13 @@ robust, and a far better story.
 | 1 | Core domain | Float money impossible to construct | ✅ |
 | 2 | Generator | Deterministic; zero order IDs in bank narration | ✅ |
 | 3 | Eval harness | Exact-set-equality scoring | ✅ |
-| 4 | L0 ingest | Totals tie; idempotent | ⬜ |
-| 5 | L1 exact matcher | **Precision exactly 100%** | ⬜ |
-| 6 | L2 fee model | Recovers planted rate; median not mean | ⬜ |
-| 7 | L3 subset matcher | Property tests; bounded pool and latency | ⬜ |
-| 8 | L5 posting | Entries balance; books tie; idempotent | ⬜ |
-| 9 | Exceptions + actions | WHAT / WHY / ACTION on every card | ⬜ |
-| 10 | **No-LLM checkpoint** | Deterministic core stands alone, zero LLM calls | ⬜ |
+| 4 | L0 ingest | Totals tie; idempotent | ✅ |
+| 5 | L1 exact matcher | **Precision exactly 100%** | ✅ |
+| 6 | L2 fee model | Recovers planted rate; median not mean | ✅ |
+| 7 | L3 subset matcher | Property tests; bounded pool and latency | ✅ |
+| 8 | L5 posting | Entries balance; books tie; idempotent | ✅ |
+| 9 | Exceptions + actions | WHAT / WHY / ACTION on every card | ✅ |
+| 10 | **No-LLM checkpoint** | Deterministic core stands alone, zero LLM calls | ✅ |
 | 11 | L4 adjudication | Bounded budget; deterministic; guardrails pass | ⬜ |
 | 12 | UI | Exceptions is home; entry preview in review | ⬜ |
 | 13 | Benchmark screen | Runs live; surfaces its own misses | ⬜ |

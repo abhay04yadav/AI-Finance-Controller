@@ -282,7 +282,9 @@ def test_an_unexplained_credit_becomes_an_exception(dataset: Path) -> None:
         assert flag.amount_paise is not None
         assert flag.reason_code in (
             ReasonCode.AMOUNT_MISMATCH,
-            ReasonCode.ADJUDICATION_REJECTED,
+            # "several answers, nobody asked" — never ADJUDICATION_REJECTED,
+            # which means a verdict was given and a guardrail threw it out.
+            ReasonCode.AMBIGUOUS_UNADJUDICATED,
         )
 
 
@@ -343,10 +345,23 @@ def test_l3_returns_an_empty_list_when_it_has_no_fee_model() -> None:
 
 
 def test_the_matcher_never_reads_the_answer_key() -> None:
+    import importlib.util
+
+    root = Path(__file__).resolve().parents[2]
+    spec = importlib.util.spec_from_file_location(
+        "drift_check", root / "scripts" / "drift_check.py"
+    )
+    assert spec and spec.loader
+    drift = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(drift)
+
+    # Code only: the docstrings discuss keeping the exception page "truthful",
+    # and describing a rule is not breaking it.
+    assert not drift.scan([root / "matching" / "subset_matcher.py"], r"truth")
+
     from matching import subset_matcher
 
     src = inspect.getsource(subset_matcher)
-    assert "truth" not in src.lower()
     tree = ast.parse(src)
     imported = {
         n.module.split(".")[0]

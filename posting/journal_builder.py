@@ -71,12 +71,28 @@ class JournalEntryBuilder:
         self,
         *,
         utr: str = "",
+        source_utr: str = "",
         ledger_ids: Iterable[str] = (),
         settlement_id: str | None = None,
         confidence: float = 0.0,
         strategy: str = "",
+        key: str | None = None,
     ) -> JournalEntryBuilder:
-        self._utr = utr
+        """Attach the provenance an entry needs to be audited and de-duplicated.
+
+        `key` sets the idempotency key explicitly. A reconciliation entry derives
+        its key from what it is about — the ledger rows, the UTR, the settlement
+        — but an entry created by a controller pressing a button has no such
+        composition, so the action names its own key ("POST_TO_SUSPENSE:UTR-1").
+        That is what makes pressing the same button twice a no-op rather than a
+        double posting.
+
+        `source_utr` is an alias for `utr`, so a call site can say which it
+        means without the reader having to remember they are the same thing.
+        """
+        if key is not None:
+            self._key = key
+        self._utr = utr or source_utr
         self._ledger_ids = frozenset(ledger_ids)
         self._settlement_id = settlement_id
         self._confidence = confidence

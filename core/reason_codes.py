@@ -28,5 +28,45 @@ class ReasonCode(StrEnum):
     ROUNDING_DRIFT = "ROUNDING_DRIFT"
     AMOUNT_MISMATCH = "AMOUNT_MISMATCH"
     FX_OR_SLAB_VARIANCE = "FX_OR_SLAB_VARIANCE"
+    #: L3 found several combinations that each explain the credit exactly, and
+    #: no adjudicator was available to choose between them — either because L4
+    #: is not built yet, or because --no-llm is in force (§4.4, NullAdjudicator).
+    #:
+    #: NOT in Appendix A, deliberately. Appendix A gives ADJUDICATION_REJECTED
+    #: for "the LLM answered and a guardrail threw the answer out". Reusing it
+    #: here would make the exception page say the AI tried and failed on runs
+    #: where no AI ran at all — a false sentence in our own UI, and precisely the
+    #: opposite of the honest exception list the brief asks for. It also keeps
+    #: "the model was wrong" measurable separately from "the model was never
+    #: asked", which is what makes guardrail effectiveness a real number at
+    #: gate 11.
+    AMBIGUOUS_UNADJUDICATED = "AMBIGUOUS_UNADJUDICATED"
     ADJUDICATION_REJECTED = "ADJUDICATION_REJECTED"
     INGEST_ERROR = "INGEST_ERROR"
+
+
+class Severity(StrEnum):
+    """How a finding should be presented to a controller.
+
+    The distinction is not cosmetic. Money in transit is money that has left the
+    customer and will arrive; an exception is money nobody can account for. A
+    screen that shows them the same way tells a controller their books are
+    broken when they are merely waiting, and a real one notices immediately.
+    """
+
+    IN_TRANSIT = "in_transit"
+    ACTION_REQUIRED = "action_required"
+
+
+#: Appendix A: AWAITING_SETTLEMENT is NOT a failure. Everything else is
+#: something a human has to decide about.
+_IN_TRANSIT: frozenset[ReasonCode] = frozenset({ReasonCode.AWAITING_SETTLEMENT})
+
+
+def severity_of(code: ReasonCode) -> Severity:
+    return Severity.IN_TRANSIT if code in _IN_TRANSIT else Severity.ACTION_REQUIRED
+
+
+def is_in_transit(code: ReasonCode) -> bool:
+    return severity_of(code) is Severity.IN_TRANSIT
+

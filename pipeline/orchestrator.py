@@ -12,11 +12,13 @@ from __future__ import annotations
 
 import time
 from collections.abc import Sequence
+from dataclasses import replace
 from pathlib import Path
 
 from core.config import Settings
 from core.dates import BusinessCalendar
 from core.run_result import ExceptionOutcome, MatchOutcome, RunResult
+from exceptions_.actions import available_for
 from ingest.normalizer import load_dataset
 from matching.protocols import MatchContext, MatchStrategy
 from pipeline.posting_step import Poster
@@ -84,6 +86,7 @@ class ReconciliationPipeline:
                 what=f.what,
                 why=f.why,
                 amount_paise=f.amount_paise,
+                value_date=f.value_date,
             )
             for f in ctx.flags
         ]
@@ -97,6 +100,7 @@ class ReconciliationPipeline:
                 what=f.what,
                 why=f.why,
                 amount_paise=f.amount_paise,
+                value_date=f.value_date,
             )
             for f in posting.findings
         ]
@@ -109,6 +113,14 @@ class ReconciliationPipeline:
                 why="The row could not be read unambiguously and was not repaired.",
             )
             for f in ingested.failures
+        ]
+
+        # ACTION is the third leg of every card (§8.2). Attached here, from the
+        # registry, so the UI renders whatever is_available() returned rather
+        # than a hardcoded button list (§8.3).
+        exceptions = [
+            replace(e, actions=available_for(e)) if not e.actions else e
+            for e in exceptions
         ]
 
         return RunResult(

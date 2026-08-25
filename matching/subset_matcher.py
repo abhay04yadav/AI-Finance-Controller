@@ -213,6 +213,11 @@ class SubsetMatcher:
         exception rather than picking one, because guessing between two
         arithmetically identical answers is how a wrong journal entry gets
         posted (§4.4).
+
+        Flagged AMBIGUOUS_UNADJUDICATED, never ADJUDICATION_REJECTED: nothing
+        was adjudicated here, so nothing was rejected. The distinction keeps
+        the exception page truthful on a --no-llm run and keeps "the model
+        was wrong" separate from "the model was never asked".
         """
         options = [
             sorted(pool[i].external_id for i in solution)
@@ -220,19 +225,21 @@ class SubsetMatcher:
         ]
         ctx.record_ambiguity(credit, options, target)
         ctx.flag(
-            ReasonCode.ADJUDICATION_REJECTED,
+            ReasonCode.AMBIGUOUS_UNADJUDICATED,
             ref=credit.external_id,
             what=(
                 f"{len(options)} different combinations of ledger rows each "
-                f"explain the {credit.amount} credit exactly."
+                f"explain {credit.external_id}, the {credit.amount} credit of "
+                f"{credit.value_date}, exactly."
             ),
             why=(
-                "Arithmetic cannot separate them — they sum to the same figure. "
-                "Deciding needs the narration, the settlement batch or the "
-                "capture timing, and no verdict was available."
+                "Arithmetic cannot separate them — they sum to the same "
+                "figure. Choosing needs the narration, the settlement batch "
+                "or the capture timing, and no adjudicator was asked."
             ),
             amount_paise=credit.amount.paise,
             raised_by=NAME,
+            value_date=credit.value_date,
         )
 
     def _flag_unexplained(
@@ -247,8 +254,9 @@ class SubsetMatcher:
             ReasonCode.AMOUNT_MISMATCH,
             ref=credit.external_id,
             what=(
-                f"No combination of open ledger rows explains the "
-                f"{credit.amount} credit of {credit.value_date}."
+                f"No combination of open ledger rows explains "
+                f"{credit.external_id}, the {credit.amount} credit of "
+                f"{credit.value_date}."
             ),
             why=(
                 "The search was cut short before it could finish, so this is "
@@ -263,6 +271,7 @@ class SubsetMatcher:
             ),
             amount_paise=credit.amount.paise,
             raised_by=NAME,
+            value_date=credit.value_date,
         )
 
 
