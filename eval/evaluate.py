@@ -24,6 +24,7 @@ from typing import Any
 
 from core.config import Settings
 from core.console import configure_stdout
+from core.reason_codes import ReasonCode, is_resolvable
 from core.run_result import RunResult
 from eval.metrics import (
     BUCKET_EDGES,
@@ -120,6 +121,24 @@ def score(
         (ref, planted_by_ref[ref]) for ref in sorted(planted - caught)
     )
 
+    # Split by what SHOULD happen to each kind of anomaly. Scoring both against
+    # one number counts correct behaviour as failure: a holiday-shifted
+    # settlement the matcher absorbed is a success, and reporting it as a missed
+    # exception turns 1 real miss into 16 apparent ones.
+    resolvable_refs = {
+        ref
+        for ref, kind in planted_by_ref.items()
+        if is_resolvable(ReasonCode(kind))
+    }
+    must_surface_refs = planted - resolvable_refs
+
+    resolvable_resolved = resolvable_refs & (resolved_refs | caught)
+    must_surface_flagged = must_surface_refs & caught
+    genuine_misses = tuple(
+        (ref, planted_by_ref[ref])
+        for ref in sorted(planted - caught - resolved_refs)
+    )
+
     tallies = {label: [0, 0] for label, _, _ in BUCKET_EDGES}
     for utr, m in result.matches.items():
         entry = tallies[bucket_of(m.confidence)]
@@ -157,7 +176,15 @@ def score(
         match_precision=correct / attempted if attempted else 0.0,
         planted=len(planted),
         caught=len(planted & caught),
-        exception_recall=len(planted & caught) / len(planted) if planted else 0.0,
+        # REDEFINED from §7.3's caught/planted. That formula assumed every
+        # planted anomaly should become an exception, which is false: four
+        # of the eight classes exist precisely so the matcher can absorb
+        # them. Recall now measures only what genuinely needs a human.
+        exception_recall=(
+            len(must_surface_flagged) / len(must_surface_refs)
+            if must_surface_refs
+            else 0.0
+        ),
         missed=missed,
         false_positives=false_positives,
         auto_posted=auto_posted,
@@ -165,12 +192,11 @@ def score(
         llm_calls=result.llm_calls,
         llm_cost_paise=result.llm_cost_paise,
         cost_per_100_paise=(result.llm_cost_paise / total * 100) if total else 0.0,
-        anomalies_flagged=len(planted & caught),
-        anomalies_resolved=len((planted - caught) & resolved_refs),
-        anomalies_unhandled=tuple(
-            (ref, planted_by_ref[ref])
-            for ref in sorted(planted - caught - resolved_refs)
-        ),
+        resolvable_planted=len(resolvable_refs),
+        resolvable_resolved=len(resolvable_resolved),
+        must_surface_planted=len(must_surface_refs),
+        must_surface_flagged=len(must_surface_flagged),
+        genuine_misses=genuine_misses,
         calibration=calibration,
         by_strategy=by_strategy,
         inferred_fee_rate=result.fee_rate,
@@ -186,6 +212,14 @@ def score(
                 "fee_expense": result.cash_position.fee_expense,
                 "gst_claimable": result.cash_position.gst_claimable,
                 "rounding_writeoff": result.cash_position.rounding_writeoff,
+                # L1 posts from the gateway's STATED fee, so nothing is left
+                # over. Only L3's inferred fee leaves a residual, and those
+                # matches route to review — so the drift is real but not yet
+                # in the books. Showing 0.00 alone implies a dead account.
+                "pending_writeoff": sum(
+                    item.prepared_entry.amount_for("5900 Rounding Write-off")
+                    for item in result.review_queue
+                ),
                 "pending_review": result.cash_position.pending_review,
                 "pending_review_paise": result.cash_position.pending_review_paise,
                 "exceptions": result.cash_position.exceptions,

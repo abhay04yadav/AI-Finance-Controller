@@ -29,8 +29,16 @@ class ReasonCode(StrEnum):
     AMOUNT_MISMATCH = "AMOUNT_MISMATCH"
     FX_OR_SLAB_VARIANCE = "FX_OR_SLAB_VARIANCE"
     #: L3 found several combinations that each explain the credit exactly, and
-    #: no adjudicator was available to choose between them — either because L4
-    #: is not built yet, or because --no-llm is in force (§4.4, NullAdjudicator).
+    #: none was confirmed. Three ways to arrive here, and the card's `why` says
+    #: which: --no-llm is in force (§4.4, NullAdjudicator); no API credential was
+    #: available; or an adjudicator was asked, examined every combination and
+    #: declined to choose because the evidence supported none of them.
+    #:
+    #: The code describes the CREDIT's state — still ambiguous, still unresolved
+    #: — not whether a model was consulted. An abstention is a real answer and
+    #: keeps this code precisely because nothing was matched and no entry was
+    #: prepared; only a verdict thrown out by a guardrail becomes
+    #: ADJUDICATION_REJECTED.
     #:
     #: NOT in Appendix A, deliberately. Appendix A gives ADJUDICATION_REJECTED
     #: for "the LLM answered and a guardrail threw the answer out". Reusing it
@@ -69,4 +77,53 @@ def severity_of(code: ReasonCode) -> Severity:
 
 def is_in_transit(code: ReasonCode) -> bool:
     return severity_of(code) is Severity.IN_TRANSIT
+
+
+class Disposition(StrEnum):
+    """What SHOULD happen to an anomaly of this kind.
+
+    Not every planted anomaly is meant to end up on the exception page. A
+    settlement pushed off a Sunday, a refund netted from a later batch, a
+    payment that authorised late, a fee rounded a paisa differently — these are
+    the hard cases the matcher was built to absorb silently. Surfacing one is a
+    failure of the matcher, not a success of the exception list.
+
+    Others cannot be resolved by anyone: a duplicated credit line, revenue the
+    books never recorded, a sale refunded back to the customer. Those must reach
+    a human.
+
+    Scoring both against one "exception recall" number counts correct behaviour
+    as failure. See `eval/metrics.py` for how the two are reported apart.
+    """
+
+    #: The matcher is expected to absorb this without a human seeing it.
+    RESOLVABLE = "resolvable"
+    #: No amount of matching can settle this; a person has to decide.
+    MUST_SURFACE = "must_surface"
+
+
+_RESOLVABLE: frozenset[ReasonCode] = frozenset(
+    {
+        # L3's wider refund window exists precisely for this.
+        ReasonCode.CROSS_PERIOD_REFUND,
+        # The business-day calendar exists precisely for this.
+        ReasonCode.HOLIDAY_SHIFT,
+        # The money arrived; only the ledger status is stale.
+        ReasonCode.LATE_AUTHORIZATION,
+        # Tolerance and the write-off account exist precisely for this.
+        ReasonCode.ROUNDING_DRIFT,
+    }
+)
+
+
+def disposition_of(code: ReasonCode) -> Disposition:
+    return (
+        Disposition.RESOLVABLE
+        if code in _RESOLVABLE
+        else Disposition.MUST_SURFACE
+    )
+
+
+def is_resolvable(code: ReasonCode) -> bool:
+    return disposition_of(code) is Disposition.RESOLVABLE
 

@@ -74,6 +74,18 @@ def test_exception_recall_has_not_regressed(golden_metrics) -> None:
     assert golden_metrics.exception_recall >= floor
 
 
+def test_anomaly_resolution_has_not_regressed(golden_metrics) -> None:
+    """The matcher must keep absorbing the hard cases it was built for."""
+    floor = expected()["min_anomaly_resolution"]
+    assert golden_metrics.anomaly_resolution_rate >= floor
+
+
+def test_genuine_misses_have_not_grown(golden_metrics) -> None:
+    """The only number that counts as a miss: neither absorbed nor surfaced."""
+    ceiling = expected()["max_genuine_misses"]
+    assert len(golden_metrics.genuine_misses) <= ceiling
+
+
 def test_llm_budget_is_respected(golden_metrics) -> None:
     """§2.2: under 10% of records may reach L4. Asserted from gate 3 onward so
     the budget can never be quietly exceeded once L4 lands at gate 11."""

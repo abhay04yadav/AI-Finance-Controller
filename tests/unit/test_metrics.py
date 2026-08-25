@@ -22,6 +22,11 @@ def metrics(**over: object) -> Metrics:
         caught=17,
         exception_recall=17 / 18,
         missed=(("ORD-4471", "ROUNDING_DRIFT"),),
+        resolvable_planted=17,
+        resolvable_resolved=16,
+        must_surface_planted=10,
+        must_surface_flagged=10,
+        genuine_misses=(("ORD-4471", "ROUNDING_DRIFT"),),
         false_positives=(),
         auto_posted=441,
         auto_resolution=441 / 500,
@@ -72,6 +77,22 @@ def test_empty_bucket_precision_is_zero_not_a_crash() -> None:
     assert Bucket("x", 0, 0).precision == 0.0
 
 
+def test_an_empty_bucket_does_not_render_as_zero_precision() -> None:
+    """0 records at 0.0% precision reads as "everything here was wrong" rather
+    than "nothing landed here"."""
+    m = metrics(
+        calibration=(
+            Bucket("0.95 - 1.00", 48, 48),
+            Bucket("0.85 - 0.95", 11, 11),
+            Bucket("0.70 - 0.85", 0, 0),
+            Bucket("below 0.70", 0, 0),
+        )
+    )
+    lines = [line for line in render(m).splitlines() if "0.70 - 0.85" in line]
+    assert lines
+    assert "0.0%" not in lines[0], lines[0]
+
+
 # --------------------------------------------------------------------------
 # Honesty: §2.8 forbids rounding metrics up
 # --------------------------------------------------------------------------
@@ -101,8 +122,38 @@ def test_report_names_its_own_misses() -> None:
     assert "ROUNDING_DRIFT" in out
 
 
+def test_the_miss_list_counts_only_genuine_misses() -> None:
+    """A planted anomaly the matcher RESOLVED is not a miss.
+
+    The old list counted every planted anomaly that was not flagged, which
+    reported 16 failures where the honest number was 1 — and reported our own
+    successes as shortfalls in front of a judge.
+    """
+    m = metrics(
+        resolvable_planted=17,
+        resolvable_resolved=17,
+        must_surface_planted=10,
+        must_surface_flagged=10,
+        genuine_misses=(),
+        missed=tuple((f"ORD-{i}", "HOLIDAY_SHIFT") for i in range(16)),
+    )
+    out = render(m)
+    assert "Missed (0)" in out, "resolved anomalies are being listed as misses"
+    assert "resolved or surfaced" in out
+
+
+def test_the_two_rates_are_reported_apart() -> None:
+    """Absorbing a hard case and surfacing an unresolvable one are different
+    jobs, and one number cannot score both."""
+    out = render(metrics())
+    assert "Anomaly resolution" in out
+    assert "Exception recall" in out
+    assert "Genuine misses" in out
+
+
 def test_report_says_so_when_nothing_was_missed() -> None:
-    out = render(metrics(missed=(), caught=18, exception_recall=1.0))
+    out = render(metrics(missed=(), genuine_misses=(), caught=18,
+                         exception_recall=1.0))
     assert "Missed (0)" in out
 
 

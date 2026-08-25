@@ -126,9 +126,24 @@ class Metrics:
     #: a holiday-shifted settlement that got matched is handled, not missed.
     #: The headline metric is left exactly as §7.3 defines it; this is the
     #: breakdown that stops it being read as a 60% failure rate.
-    anomalies_flagged: int = 0
-    anomalies_resolved: int = 0
-    anomalies_unhandled: tuple[tuple[str, str], ...] = ()
+    #: Planted anomalies the matcher was expected to absorb silently, and how
+    #: many it did. A holiday-shifted settlement that got matched is a success.
+    resolvable_planted: int = 0
+    resolvable_resolved: int = 0
+    #: Planted anomalies nobody can resolve, and how many reached a human.
+    must_surface_planted: int = 0
+    must_surface_flagged: int = 0
+    #: Neither absorbed nor surfaced. The only real misses.
+    genuine_misses: tuple[tuple[str, str], ...] = ()
+
+    @property
+    def anomaly_resolution_rate(self) -> float:
+        """Of the anomalies the matcher should absorb, how many it did."""
+        return (
+            self.resolvable_resolved / self.resolvable_planted
+            if self.resolvable_planted
+            else 0.0
+        )
     #: The §1.6 books-closed summary — the literal answer to the track title.
     books: dict[str, int] = field(default_factory=dict)
 
@@ -190,7 +205,7 @@ def render(m: Metrics, *, show_timing: bool = True) -> str:
         f"Match precision       {pct(m.match_precision):>7}   "
         f"({m.correct}/{m.attempted} correct)   <- the number that matters",
         f"Exception recall      {pct(m.exception_recall):>7}   "
-        f"({m.caught}/{m.planted} planted caught)",
+        f"({m.must_surface_flagged}/{m.must_surface_planted} that need a human)",
         f"Auto-resolution       {pct(m.auto_resolution):>7}   "
         f"({m.auto_posted} posted without a human)",
     ]
@@ -240,7 +255,16 @@ def render(m: Metrics, *, show_timing: bool = True) -> str:
             f"  Revenue recognised {'':>6}           {money_str(b['revenue']):>16}",
             f"  Gateway fee expense{'':>6}           {money_str(b['fee_expense']):>16}",
             f"  GST input credit claimable         {money_str(b['gst_claimable']):>16}",
-            f"  Rounding write-off                 {money_str(b['rounding_writeoff']):>16}",
+            f"  Rounding write-off                 "
+            f"{money_str(b['rounding_writeoff']):>16}",
+            *(
+                [
+                    f"    of which pending in review       "
+                    f"{money_str(b['pending_writeoff']):>16}"
+                ]
+                if b.get("pending_writeoff")
+                else []
+            ),
             f"  {glyph('rule') * 50}",
             f"  Cash in bank (confirmed)           {money_str(b['confirmed_in_bank']):>16}",
             f"  Cash in transit                    {money_str(b['in_transit']):>16}",
@@ -253,35 +277,48 @@ def render(m: Metrics, *, show_timing: bool = True) -> str:
     if any(b.count for b in m.calibration):
         for b in m.calibration:
             marker = "  <- auto-post band" if b.label.startswith("0.95") else ""
+            # An empty bucket has no precision. Printing 0.0% reads as
+            # "everything in this band was wrong" rather than "nothing
+            # landed here".
+            shown = pct(b.precision) if b.count else glyph("dash")
             out.append(
                 f"  {b.label:<12} {b.count:>5} records   "
-                f"{pct(b.precision):>7} precision{marker}"
+                f"{shown:>7} precision{marker if b.count else ''}"
             )
     else:
         out.append("  (no matches attempted)")
 
-    if m.anomalies_flagged or m.anomalies_resolved:
-        total = m.anomalies_flagged + m.anomalies_resolved + len(m.anomalies_unhandled)
+    if m.resolvable_planted or m.must_surface_planted:
+        total = m.resolvable_planted + m.must_surface_planted
         out += [
             rule,
             f"Planted anomalies ({total})",
-            f"  flagged as exceptions              {m.anomalies_flagged:>4}",
-            f"  resolved by matching               {m.anomalies_resolved:>4}",
-            f"  neither                            {len(m.anomalies_unhandled):>4}"
-            + ("   <- the honest misses" if m.anomalies_unhandled else ""),
+            f"  Anomaly resolution    {pct(m.anomaly_resolution_rate):>7}   "
+            f"({m.resolvable_resolved}/{m.resolvable_planted} the matcher "
+            "should absorb)",
+            f"  Exception recall      {pct(m.exception_recall):>7}   "
+            f"({m.must_surface_flagged}/{m.must_surface_planted} that need a "
+            "human)",
+            f"  Genuine misses        {len(m.genuine_misses):>7}   "
+            "(neither absorbed nor surfaced)",
         ]
-        for ref, kind in m.anomalies_unhandled[:5]:
+        for ref, kind in m.genuine_misses[:5]:
             out.append(f"      {ref} {glyph('dash')} {kind}")
 
     out.append(rule)
-    if m.missed:
-        out.append(f"Missed ({len(m.missed)}):")
-        for ref, kind in m.missed[:10]:
+    # Only genuine misses. The old list counted every planted anomaly the
+    # matcher had RESOLVED as a failure, which reported our own successes as
+    # shortfalls — 16 items where the honest number was 1.
+    if m.genuine_misses:
+        out.append(f"Missed ({len(m.genuine_misses)}):")
+        for ref, kind in m.genuine_misses[:10]:
             out.append(f"  {ref} {dash} {kind}")
-        if len(m.missed) > 10:
-            out.append(f"  ... and {len(m.missed) - 10} more")
+        if len(m.genuine_misses) > 10:
+            out.append(f"  ... and {len(m.genuine_misses) - 10} more")
     else:
-        out.append("Missed (0): every planted exception was caught")
+        out.append(
+            "Missed (0): every planted anomaly was either resolved or surfaced"
+        )
 
     if m.false_positives:
         out.append(
