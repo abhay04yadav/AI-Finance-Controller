@@ -1,0 +1,11 @@
+{
+  "verdicts": [
+    {
+      "utr": "UTR-77291",
+      "selected": "A",
+      "confidence": 0.97,
+      "reason": "Bank narration contains SETL88, matching all three settlement_ids in candidate A. Candidate B spans two different settlements with scattered capture dates.",
+      "evidence_fields": ["narration", "settlement_id"]
+    }
+  ]
+}

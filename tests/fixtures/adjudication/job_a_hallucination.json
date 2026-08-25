@@ -1,0 +1,11 @@
+{
+  "verdicts": [
+    {
+      "utr": "UTR-77291",
+      "selected": "C",
+      "confidence": 0.99,
+      "reason": "Candidate C groups the three orders that share settlement SETL-88.",
+      "evidence_fields": ["settlement_id"]
+    }
+  ]
+}

@@ -28,12 +28,13 @@ from dataclasses import dataclass, field
 from datetime import date
 from typing import Protocol
 
+from core.models import JournalEntry
 from core.money import Money
 from core.reason_codes import ReasonCode
 from core.result import Err, Ok, Result
 from core.run_result import ActionOffer, ExceptionOutcome
 from posting.chart_of_accounts import Account
-from posting.journal_builder import JournalEntry, JournalEntryBuilder
+from posting.journal_builder import JournalEntryBuilder
 
 # --------------------------------------------------------------------------
 # What an action needs from the outside world

@@ -15,6 +15,12 @@ venv/
 # (§0.1). A working document — kept local, never committed, never pushed.
 broke_fixed.txt
 
+# The two spec documents this build was written against — the implementation
+# guide and the review guide. Local working documents. They were tracked between
+# 64c1e95 and gate 11 and have been removed from the index and purged from
+# history; this line is what stops them coming back on the next `git add -A`.
+docs/
+
 # Generated datasets. Reproducible from a seed, so never committed (§2.7 rule 2).
 data/
 build/
@@ -30,3 +36,7 @@ web/out/
 # OS
 .DS_Store
 Thumbs.db
+
+# The two determinism runs (make determinism)
+.run1.txt
+.run2.txt

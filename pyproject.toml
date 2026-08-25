@@ -29,11 +29,16 @@ llm = [
 ]
 
 [tool.setuptools]
+# The prompt files ship WITH the package. A prompt that only exists in a
+# source checkout makes an installed copy of this system quietly different
+# from the one we measured — and the prompt version is a cache key.
+package-data = { "adjudication.prompts" = ["*.md"] }
 packages = [
     "core",
     "ingest",
     "matching",
     "adjudication",
+    "adjudication.prompts",
     "posting",
     "exceptions_",
     "pipeline",

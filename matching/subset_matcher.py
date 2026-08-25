@@ -31,6 +31,7 @@ from __future__ import annotations
 
 from datetime import timedelta
 
+from core.adjudication import CandidateLeg, UnexplainedEvidence
 from core.dates import DateWindow
 from core.models import Direction, MatchProposal, Record
 from core.reason_codes import ReasonCode
@@ -88,9 +89,11 @@ class SubsetMatcher:
         )
 
         last: SolveResult | None = None
+        last_pool: list[Record] = []
         for pool, tol, confidence in attempts:
             if not pool:
                 continue
+            last_pool = pool
             result = solve(
                 _gross_equivalents(pool, fee),
                 target,
@@ -101,14 +104,14 @@ class SubsetMatcher:
             last = result
 
             if result.is_ambiguous:
-                self._flag_ambiguous(ctx, credit, pool, result, target)
+                self._flag_ambiguous(ctx, credit, pool, result, target, tol, fee)
                 return None
 
             if result.solutions:
                 rows = [pool[i] for i in result.solutions[0]]
                 return self._propose(credit, rows, confidence, fee, target, tol)
 
-        self._flag_unexplained(ctx, credit, target, last)
+        self._flag_unexplained(ctx, credit, target, last, last_pool, fee)
         return None
 
     # ------------------------------------------------------------------
@@ -205,6 +208,8 @@ class SubsetMatcher:
         pool: list[Record],
         result: SolveResult,
         target: int,
+        tol: int,
+        fee: FeeModel,
     ) -> None:
         """More than one combination explains this credit.
 
@@ -223,7 +228,29 @@ class SubsetMatcher:
             sorted(pool[i].external_id for i in solution)
             for solution in result.solutions
         ]
-        ctx.record_ambiguity(credit, options, target)
+        # The pool as L3 valued it, so L4's guardrail can re-add the chosen
+        # combination without ever seeing the fee model (§4.4, §3.2).
+        gross_of = dict(
+            zip(
+                (row.external_id for row in pool),
+                _gross_equivalents(pool, fee),
+                strict=True,
+            )
+        )
+        ctx.record_ambiguity(
+            credit,
+            options,
+            target,
+            gross_of=gross_of,
+            tolerance_paise=tol,
+            fee_rate=fee.rate if fee.is_usable else None,
+            # False when the solver stopped at its cap, which means the true
+            # combination may not be on the list at all. On seed 42 it is not:
+            # the correct set reconstructs 53 paise below target and the
+            # tolerance is 50, so no number of candidates would have contained
+            # it. L4 is told, and may answer NONE (§4.4).
+            exhaustive=result.exhausted,
+        )
         ctx.flag(
             ReasonCode.AMBIGUOUS_UNADJUDICATED,
             ref=credit.external_id,
@@ -248,8 +275,26 @@ class SubsetMatcher:
         credit: Record,
         target: int,
         result: SolveResult | None,
+        pool: list[Record],
+        fee: FeeModel,
     ) -> None:
         incomplete = result is not None and not result.exhausted
+        # Handed to L4 job B, which can say WHY in a sentence a controller can
+        # act on. Recorded whether or not an adjudicator exists: on --no-llm it
+        # simply goes unused, and the deterministic `why` below stands.
+        ctx.record_unexplained(
+            UnexplainedEvidence(
+                ref=credit.external_id,
+                amount_paise=credit.amount.paise,
+                narration=credit.narration,
+                expected_gross_paise=target,
+                nearest_rows=_nearest(pool, target, fee),
+                open_pool_rows=len(pool),
+                open_pool_paise=sum(_gross_equivalents(pool, fee)),
+                value_date=credit.value_date,
+                inferred_fee_rate=fee.rate if fee.is_usable else None,
+            )
+        )
         ctx.flag(
             ReasonCode.AMOUNT_MISMATCH,
             ref=credit.external_id,
@@ -318,3 +363,29 @@ def _rupees(paise: int) -> str:
     from core.money import Money
 
     return str(Money(paise))
+
+
+#: How many near-misses job B is shown. Enough to reason from, few enough that
+#: a batch of exceptions stays a small request.
+NEAREST_ROWS = 6
+
+
+def _nearest(rows: list[Record], target: int, fee: FeeModel) -> tuple[CandidateLeg, ...]:
+    """The open rows closest to the target, as gross-equivalents.
+
+    Ranked by distance from the target so the model sees the near-miss it is
+    being asked about rather than an arbitrary slice of the window. Ties break
+    on the order id, because a pool that reorders between runs would change the
+    prompt, change the cache key, and quietly cost a request per run.
+    """
+    valued = list(zip((r.external_id for r in rows), _gross_equivalents(rows, fee), strict=True))
+    by_id = {r.external_id: r for r in rows}
+    ranked = sorted(valued, key=lambda pair: (abs(pair[1] - target), pair[0]))
+    return tuple(
+        CandidateLeg(
+            order_id=order_id,
+            gross_equivalent_paise=gross,
+            capture_date=by_id[order_id].value_date,
+        )
+        for order_id, gross in ranked[:NEAREST_ROWS]
+    )

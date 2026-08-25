@@ -18,6 +18,12 @@ from dataclasses import dataclass, field
 from datetime import date
 from typing import Protocol
 
+from core.adjudication import (
+    Ambiguity,
+    Candidate,
+    CandidateLeg,
+    UnexplainedEvidence,
+)
 from core.config import Settings
 from core.dates import BusinessCalendar
 from core.models import MatchProposal, Record, Source
@@ -38,22 +44,6 @@ class Flag:
     value_date: date | None = None
 
 
-@dataclass(frozen=True, slots=True)
-class Ambiguity:
-    """A credit that several combinations explain equally well.
-
-    Arithmetic has done all it can; separating these needs the narration, the
-    settlement batch or the capture timing — the signals L4 reasons over
-    (§4.4 job A). Recorded here so L4 has its input ready at gate 11.
-    """
-
-    credit_utr: str
-    credit_paise: int
-    narration: str
-    options: tuple[tuple[str, ...], ...]
-    target_paise: int
-
-
 @dataclass
 class MatchContext:
     """Indexed, read-only view of one dataset, plus the residual as it shrinks."""
@@ -67,6 +57,8 @@ class MatchContext:
     settlements: tuple[Record, ...] = ()
     settlement_by_id: dict[str, Record] = field(default_factory=dict)
     utr_counts: Counter[str] = field(default_factory=Counter)
+    #: order id -> the settlement batch that reported it. L4's job A signal.
+    order_to_settlement: dict[str, str] = field(default_factory=dict)
 
     #: Derived after each layer from what has been confirmed so far (§5.4).
     #: None until L2 has run, or when the --no-fee-model ablation is active.
@@ -75,6 +67,9 @@ class MatchContext:
 
     accepted: list[MatchProposal] = field(default_factory=list)
     ambiguities: list[Ambiguity] = field(default_factory=list)
+    #: Credits nothing explained, with the rows that came closest. L4 job B
+    #: turns these into the WHY and ACTION on an exception card (§4.4, §8.2).
+    unexplained: list[UnexplainedEvidence] = field(default_factory=list)
     flags: list[Flag] = field(default_factory=list)
     _claimed_bank: set[str] = field(default_factory=set)
     _claimed_ledger: set[str] = field(default_factory=set)
@@ -97,6 +92,9 @@ class MatchContext:
             r for r in records if r.source is Source.SETTLEMENT
         )
         ctx.settlement_by_id = {r.external_id: r for r in ctx.settlements}
+        for settlement in ctx.settlements:
+            for order_id in settlement.settlement().order_ids:
+                ctx.order_to_settlement.setdefault(order_id, settlement.external_id)
         # Counted once, up front: a repeated UTR is the DUPLICATE_UTR signal and
         # every strategy needs to see it before it matches anything (§4.1 step 5).
         ctx.utr_counts = Counter(
@@ -175,18 +173,69 @@ class MatchContext:
         if pairs:
             self.fee_model = FeeModel.infer(pairs, gst_rate=self.settings.gst_rate)
 
+    def settlement_id_for(self, order_id: str) -> str | None:
+        """Which payout batch reported this order, if any.
+
+        Invisible to arithmetic and decisive for L4 job A: a combination whose
+        rows all name one settlement is describing a payout, while one spanning
+        three different settlements is describing a coincidence. Not every order
+        has one — the settlement report covers ~85% of credits by construction
+        (§6.2), and an order the report never mentioned is exactly the kind L3
+        had to solve the hard way.
+        """
+        return self.order_to_settlement.get(order_id)
+
     def record_ambiguity(
-        self, credit: Record, options: list[list[str]], target_paise: int
+        self,
+        credit: Record,
+        options: list[list[str]],
+        target_paise: int,
+        *,
+        gross_of: dict[str, int],
+        tolerance_paise: int = 0,
+        fee_rate: float | None = None,
+        exhaustive: bool = True,
     ) -> None:
+        """Hand one unsolvable-by-arithmetic credit to L4 (§4.4 job A).
+
+        `gross_of` maps each order id to the gross it stands for, as L3 valued
+        it — a refund's gross-equivalent is larger than its face value. Carrying
+        the number rather than the fee model is what lets `adjudication/` verify
+        the chosen combination without importing `matching/`, and makes the
+        arithmetic guardrail a comparison of two integers that both existed
+        before the model was asked.
+        """
+        candidates = tuple(
+            Candidate(
+                id=_candidate_id(index),
+                legs=tuple(
+                    CandidateLeg(
+                        order_id=order_id,
+                        gross_equivalent_paise=gross_of[order_id],
+                        capture_date=self.ledger_by_id[order_id].value_date,
+                        settlement_id=self.settlement_id_for(order_id),
+                    )
+                    for order_id in option
+                ),
+            )
+            for index, option in enumerate(options)
+        )
         self.ambiguities.append(
             Ambiguity(
                 credit_utr=credit.external_id,
                 credit_paise=credit.amount.paise,
                 narration=credit.narration,
-                options=tuple(tuple(o) for o in options),
+                candidates=candidates,
                 target_paise=target_paise,
+                tolerance_paise=tolerance_paise,
+                credit_value_date=credit.value_date,
+                inferred_fee_rate=fee_rate,
+                candidates_are_exhaustive=exhaustive,
             )
         )
+
+    def record_unexplained(self, evidence: UnexplainedEvidence) -> None:
+        self.unexplained.append(evidence)
 
     def flag(
         self,
@@ -210,3 +259,15 @@ class MatchStrategy(Protocol):
     name: str
 
     def propose(self, ctx: MatchContext) -> list[MatchProposal]: ...
+
+
+def _candidate_id(index: int) -> str:
+    """A, B, C ... AA, AB. Short labels a model can echo back without slipping
+    a digit, and stable for a given position so a cache key does not move."""
+    letters = ""
+    n = index
+    while True:
+        letters = chr(ord("A") + n % 26) + letters
+        n = n // 26 - 1
+        if n < 0:
+            return letters

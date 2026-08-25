@@ -1,0 +1,11 @@
+{
+  "hypotheses": [
+    {
+      "ref": "UTR-4482",
+      "classification": "FX_OR_SLAB_VARIANCE",
+      "hypothesis": "ORD-3312 at 428000 paise is the nearest open row; the 8000 paise gap is not explained by the 1.83% fee model. Consistent with an international card on a higher MDR slab.",
+      "suggested_action": "RAISE_GATEWAY_TICKET",
+      "confidence": 0.55
+    }
+  ]
+}

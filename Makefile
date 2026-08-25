@@ -23,7 +23,7 @@ SEEDS   ?=
 NO_LLM  ?=
 DATA    ?= data/seed$(SEED)
 
-.PHONY: help venv setup generate fee-datasets match eval demo test lint typecheck layer-check drift-check tree clean
+.PHONY: help venv setup generate fee-datasets match eval determinism demo test lint typecheck layer-check drift-check tree clean
 
 help:
 	@echo "AI Finance Controller"
@@ -35,6 +35,7 @@ help:
 	@echo "  make fee-datasets  non-round MDR fixtures for L2         [gate 6]"
 	@echo "  make match         run the reconciliation pipeline       [gate 8]"
 	@echo "  make eval          score the agent against truth.json    [gate 3]"
+	@echo "  make determinism   two runs of make eval must be identical [gate 11]"
 	@echo "  make demo          generate + match + eval, demo scale   [gate 14]"
 	@echo ""
 	@echo "  make test          pytest"
@@ -72,6 +73,14 @@ eval:
 	$(PY) -m eval.evaluate --dataset $(DATA) --seed $(SEED) --scale $(SCALE) \
 	  $(if $(NO_LLM),--no-llm,) $(if $(SEEDS),--seeds $(SEEDS),)
 
+# Gate 11's stop condition: two runs of the same seed must be byte-identical.
+# --no-timing drops throughput, which measures the machine rather than the
+# system and is the one line that legitimately differs between runs.
+determinism:
+	$(PY) -m eval.evaluate --dataset $(DATA) --seed $(SEED) --scale $(SCALE) --no-timing > .run1.txt
+	$(PY) -m eval.evaluate --dataset $(DATA) --seed $(SEED) --scale $(SCALE) --no-timing > .run2.txt
+	$(PY) scripts/diff_runs.py .run1.txt .run2.txt
+
 demo:
 	$(MAKE) generate SCALE=5000
 	$(MAKE) match SCALE=5000
@@ -84,7 +93,7 @@ lint:
 	$(PY) -m ruff check .
 
 typecheck:
-	$(PY) -m mypy core/ matching/ ingest/ posting/
+	$(PY) -m mypy core/ matching/ ingest/ posting/ adjudication/ exceptions_/ pipeline/
 
 layer-check:
 	$(PY) scripts/check_layering.py

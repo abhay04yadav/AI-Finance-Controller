@@ -142,6 +142,11 @@ class RunResult:
     review_queue: tuple[ReviewItem, ...] = ()
     cash_position: CashPosition | None = None
     duplicate_postings_refused: int = 0
+    #: Anything L4 wants on the record: budget exhausted, no credential, a
+    #: corrupt cache entry, a refusal. Reported rather than swallowed (§5.5),
+    #: because "the model was never asked" and "the model said no" are
+    #: different facts and a controller is entitled to both.
+    adjudication_notes: tuple[str, ...] = ()
 
     def auto_posted(self, threshold: float) -> int:
         """Matches confident enough to post without asking a human (§4.5)."""

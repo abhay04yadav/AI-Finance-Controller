@@ -58,12 +58,18 @@ def build_pipeline(*, no_llm: bool = False, no_fee_model: bool = False) -> Agent
     here as their gates land; the eval never changes, because it only ever sees
     `RunResult`.
     """
+    from adjudication.llm_adjudicator import LlmAdjudicator
+    from adjudication.null_adjudicator import NullAdjudicator
+    from adjudication.protocols import Adjudicator
     from core.config import Settings
     from core.dates import BusinessCalendar
     from matching.registry import build_strategies
     from pipeline.orchestrator import ReconciliationPipeline
 
     settings = Settings()
+    # The ONE place the LLM is chosen. Everything downstream sees the protocol,
+    # which is why every test in this repo runs without an API key (§5.2).
+    adjudicator: Adjudicator = NullAdjudicator() if no_llm else LlmAdjudicator()
     # ONE calendar instance, shared by every layer that reasons about dates.
     # Two would make planted HOLIDAY_SHIFT cases unsolvable by construction,
     # and that bug looks exactly like a matcher failure (§5.1).
@@ -74,4 +80,5 @@ def build_pipeline(*, no_llm: bool = False, no_fee_model: bool = False) -> Agent
         calendar=calendar,
         settings=settings,
         fee_model_enabled=not no_fee_model,
+        adjudicator=adjudicator,
     )

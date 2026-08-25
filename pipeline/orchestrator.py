@@ -15,12 +15,15 @@ from collections.abc import Sequence
 from dataclasses import replace
 from pathlib import Path
 
+from adjudication.null_adjudicator import NullAdjudicator
+from adjudication.protocols import Adjudicator
 from core.config import Settings
 from core.dates import BusinessCalendar
 from core.run_result import ExceptionOutcome, MatchOutcome, RunResult
 from exceptions_.actions import available_for
 from ingest.normalizer import load_dataset
 from matching.protocols import MatchContext, MatchStrategy
+from pipeline.adjudication_step import adjudicate, apply_hypotheses
 from pipeline.posting_step import Poster
 
 
@@ -36,11 +39,15 @@ class ReconciliationPipeline:
         calendar: BusinessCalendar,
         settings: Settings,
         fee_model_enabled: bool = True,
+        adjudicator: Adjudicator | None = None,
     ) -> None:
         self._strategies = tuple(strategies)
         self._calendar = calendar
         self._settings = settings
         self._fee_model_enabled = fee_model_enabled
+        # Null Object, not None: the orchestrator never asks whether it has an
+        # adjudicator, so there is no `if` here for a later gate to get wrong.
+        self._adjudicator: Adjudicator = adjudicator or NullAdjudicator()
 
     def run(self, dataset: Path) -> RunResult:
         timings: dict[str, float] = {}
@@ -61,6 +68,17 @@ class ReconciliationPipeline:
             # e.g. the fee model, once L1 has confirmed enough pairs (§5.4)
             ctx.refresh_derived()
             timings[strategy.name] = (time.perf_counter() - t) * 1000
+
+        # L4 — only what arithmetic could not settle (§4.4). Runs before L5 so
+        # a verdict's rows are claimed before anything is posted.
+        t = time.perf_counter()
+        adjudication = adjudicate(
+            ctx,
+            self._adjudicator,
+            records=len(ingested.records),
+            settings=self._settings,
+        )
+        timings[self._adjudicator.name] = (time.perf_counter() - t) * 1000
 
         # L5 — the step that closes the loop (§4.5).
         t = time.perf_counter()
@@ -123,10 +141,18 @@ class ReconciliationPipeline:
             for e in exceptions
         ]
 
+        # Job B's hypotheses become the WHY on the cards they explain (§8.2).
+        final = apply_hypotheses(tuple(exceptions), adjudication)
+
         return RunResult(
             matches=matches,
-            exceptions=tuple(exceptions),
+            exceptions=final,
             records_processed=len(ingested.records),
+            # Records that REACHED L4, cached or not — the numerator in §2.2's
+            # under-10% budget. Cost counts only requests actually made.
+            llm_calls=adjudication.calls,
+            llm_cost_paise=adjudication.cost_paise,
+            adjudication_notes=adjudication.notes,
             layer_timings_ms=timings,
             # None unless something was actually learned. Reporting the
             # LOW_CONFIDENCE fallback as an inferred rate would contradict the

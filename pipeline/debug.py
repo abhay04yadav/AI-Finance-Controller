@@ -2,6 +2,7 @@
 
     python -m pipeline.debug --stage L0 --dataset data/seed42     (gate 4)
     python -m pipeline.debug --profile --dataset data/seed42      (gate 10)
+    python -m pipeline.debug --stage L4 --dataset data/seed42     (gate 11)
 
 When throughput is a judged metric you need to know which layer is slow, and
 being able to say "L3 is 4ms, L4 is 380ms, that's why we keep L4 under 10%" is a
@@ -14,10 +15,13 @@ rather than pretending.
 from __future__ import annotations
 
 import argparse
+import json
 import time
 from collections import Counter
+from collections.abc import Sequence
 from pathlib import Path
 
+from core.adjudication import AdjudicationResult, Ambiguity, Unexplained
 from core.console import configure_stdout
 from core.console import money as money_str
 from core.console import rule as console_rule
@@ -37,14 +41,14 @@ def show_l0(dataset: Path) -> IngestResult:
     for source in (Source.LEDGER, Source.SETTLEMENT, Source.BANK):
         rows = result.by_source(source)
         if not rows:
-            print(f"{source:<12}{0:>9}")
+            print(f"{source!s:<12}{0:>9}")
             continue
         total = result.total_paise(source)
         with_refs = sum(1 for r in rows if r.refs)
         lo = min(r.value_date for r in rows)
         hi = max(r.value_date for r in rows)
         print(
-            f"{source:<12}{len(rows):>9}{_rupees(total):>18}{with_refs:>8}"
+            f"{source!s:<12}{len(rows):>9}{_rupees(total):>18}{with_refs:>8}"
             f"{f'{lo} .. {hi}':>26}"
         )
 
@@ -55,8 +59,8 @@ def show_l0(dataset: Path) -> IngestResult:
         print()
         print(f"INGEST_ERROR — {len(result.failures)} row(s) could not be read")
         by_source = Counter(str(f.source) for f in result.failures)
-        for source, n in sorted(by_source.items()):
-            print(f"  {source:<12}{n:>4}")
+        for name, n in sorted(by_source.items()):
+            print(f"  {name:<12}{n:>4}")
         for failure in result.failures[:10]:
             print(f"  {failure.describe()}")
         if len(result.failures) > 10:
@@ -109,6 +113,81 @@ def show_l2(dataset: Path) -> None:
             f"  {_rupees(gross):>14}{_rupees(net):>14}{_rupees(back):>14}"
             f"{back - gross:>8} p"
         )
+
+
+def show_l4(dataset: Path) -> None:
+    """Exactly what reaches the LLM, and what it costs (§4.4, §2.2).
+
+    Printed WITHOUT calling anything: this is the question, serialized, before
+    any model sees it. Being able to show a judge the literal payload — and
+    that it is three cases out of six hundred records — is a better answer to
+    "how much does the AI do?" than any number in the report.
+    """
+    from core.config import Settings
+    from core.dates import BusinessCalendar
+    from matching.registry import build_strategies
+    from pipeline.adjudication_step import budget_for
+    from pipeline.orchestrator import ReconciliationPipeline
+
+    settings = Settings()
+    captured = _Capture()
+    result = ReconciliationPipeline(
+        build_strategies(),
+        calendar=BusinessCalendar(),
+        settings=settings,
+        adjudicator=captured,
+    ).run(dataset)
+
+    print(f"L4 - LLM ADJUDICATION: {dataset}")
+    print(console_rule(66))
+    records = result.records_processed
+    budget = budget_for(records, settings)
+    reaching = len(captured.ambiguities) + len(captured.cases)
+    share = reaching / records if records else 0.0
+    print(f"{'records':<22}{records:>8}")
+    print(f"{'budget (10%)':<22}{budget:>8} case(s)")
+    print(f"{'reaching L4':<22}{reaching:>8} case(s)   {share:.1%}")
+    print(f"{'  job A (select)':<22}{len(captured.ambiguities):>8}")
+    print(f"{'  job B (explain)':<22}{len(captured.cases):>8}")
+    print(f"{'requests':<22}{min(1, len(captured.ambiguities)) + min(1, len(captured.cases)):>8}"
+          "   batched, one per job")
+    print()
+
+    if captured.ambiguities:
+        print("JOB A - the question, as sent:")
+        print(json.dumps(captured.ambiguities[0].as_prompt_dict(), indent=2)[:1600])
+        print()
+    if captured.cases:
+        print("JOB B - the question, as sent:")
+        print(json.dumps(captured.cases[0].as_prompt_dict(), indent=2)[:1600])
+    if not captured.ambiguities and not captured.cases:
+        print("nothing reached L4 - the deterministic core settled every credit")
+
+
+class _Capture:
+    """Records what L4 would be asked, and answers nothing.
+
+    A Null Object with a notebook (§5.3). Showing the question without paying
+    for an answer is the whole point of `--stage L4`: it is a claim about our
+    own budget, and it should be checkable without spending anything.
+    """
+
+    name = "L4_capture"
+
+    def __init__(self) -> None:
+        self.ambiguities: list[Ambiguity] = []
+        self.cases: list[Unexplained] = []
+
+    def adjudicate(
+        self,
+        ambiguities: Sequence[Ambiguity],
+        cases: Sequence[Unexplained],
+        *,
+        budget: int,
+    ) -> AdjudicationResult:
+        self.ambiguities = list(ambiguities)
+        self.cases = list(cases)
+        return AdjudicationResult()
 
 
 def show_profile(dataset: Path) -> None:
@@ -170,6 +249,9 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if stage == "L2":
         show_l2(args.dataset)
+        return 0
+    if stage == "L4":
+        show_l4(args.dataset)
         return 0
 
     print(f"stage {stage} is not implemented yet — it arrives with its own gate")
