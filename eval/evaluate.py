@@ -377,10 +377,6 @@ def main(argv: list[str] | None = None) -> int:
     return 0
 
 
-if __name__ == "__main__":
-    raise SystemExit(main())
-
-
 def _load_env() -> None:
     """Read `.env` into the environment, if there is one.
 
@@ -402,3 +398,7 @@ def _load_env() -> None:
         # continues without a key, which is a supported state, not a failure.
         return
     load_dotenv(env, override=False)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

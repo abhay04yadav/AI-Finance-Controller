@@ -354,8 +354,6 @@ class LlmAdjudicator:
         breakpoint; the question — the only volatile part — goes last, in the
         user turn, so the prefix stays cacheable.
         """
-        import anthropic
-
         try:
             response = client.messages.create(
                 model=MODEL,
@@ -381,10 +379,8 @@ class LlmAdjudicator:
                     },
                 },
             )
-        except anthropic.APIStatusError as exc:
+        except _transport_errors() as exc:
             raise LlmUnavailable(f"{type(exc).__name__}: {exc}") from exc
-        except anthropic.APIConnectionError as exc:
-            raise LlmUnavailable(f"network: {exc}") from exc
         except TypeError as exc:
             # The SDK's own signal for "no credential could be resolved", raised
             # from header validation rather than as an AnthropicError. Converted
@@ -456,6 +452,31 @@ class _Usage:
     answered: int = 0
     requests: int = 0
     cost_paise: int = 0
+
+
+def _transport_errors() -> tuple[type[BaseException], ...]:
+    """SDK exceptions to convert into `LlmUnavailable`, or `()` if there is no SDK.
+
+    `_ask` used to open with a bare `import anthropic`, purely so these two
+    classes could be named in `except` clauses. That made the SDK a hard
+    requirement of the *code path*, not just of the network — so a caller who
+    injected their own client still needed `anthropic` installed, and CI, which
+    installs `.[dev]` without the `llm` extra, failed 21 tests that inject a
+    fake one.
+
+    It also quietly broke §4.4's contract. `anthropic` is an optional extra:
+    gates 0-10 and `--no-llm` must run with no LLM client installed at all. A
+    module that imports it to handle errors has revoked that promise.
+
+    Returning an empty tuple when the SDK is absent is correct rather than
+    lenient — with no SDK there are no SDK errors to catch, and anything the
+    injected transport raises should propagate as the bug it is.
+    """
+    try:
+        import anthropic
+    except ImportError:
+        return ()
+    return (anthropic.APIStatusError, anthropic.APIConnectionError)
 
 
 class LlmUnavailable(RuntimeError):

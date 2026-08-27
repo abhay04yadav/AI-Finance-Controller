@@ -15,8 +15,23 @@ jobs:
         with:
           python-version: "3.11"
 
+      # `.[dev]` ONLY — never `.[dev,llm]`. The `anthropic` SDK is an optional
+      # extra (§4.4) and gates 0-10, `--no-llm`, and any caller injecting its own
+      # client must work without it. Installing the extra here would hide that:
+      # it is exactly how a bare `import anthropic` in the L4 error path reached
+      # main and broke 21 tests that inject a fake client.
       - name: Install
         run: python -m pip install -e ".[dev]"
+
+      # Datasets are reproducible from a seed, so they are gitignored (§2.7
+      # rule 2) — which means CI has none unless it makes them. Without this
+      # step 27 integration tests SKIP, drift check 6 has nothing to read, and
+      # the eval CLI is never run at all. Every one of those was a real gap:
+      # `make eval` shipped broken because no CI step ever invoked it.
+      - name: Generate datasets
+        run: |
+          python -m generator.generate --seed 42 --scale 500 --out data/seed42
+          python -m generator.generate --seed 7  --scale 500 --out data/seed7
 
       # Guide §3.2 — the dependency rule is enforced, not aspirational.
       - name: Layering check
@@ -29,10 +44,52 @@ jobs:
       - name: Lint
         run: python -m ruff check .
 
+      - name: Types
+        run: >
+          python -m mypy core/ matching/ ingest/ posting/
+          adjudication/ exceptions_/ pipeline/
+
       - name: Tests
         run: python -m pytest tests/ -v
 
       # Gate 3 onward: a precision drop must fail the build (§7.5).
-      # Enabled once the generator and eval harness exist.
-      # - name: Eval regression gate
-      #   run: make eval SEED=42 SCALE=500 NO_LLM=1
+      #
+      # `test_golden.py` already gates precision inside pytest, so this is not
+      # duplication — it is the only step that exercises the COMMAND a judge
+      # types. It runs at scale 500 rather than the golden's 200, and NO_LLM=1
+      # keeps it independent of the verdict cache and of whether a key exists.
+      - name: Eval regression gate
+        run: >
+          python -m eval.evaluate --dataset data/seed42
+          --seed 42 --scale 500 --no-llm --no-timing
+
+  # The screens are typechecked and built, but not deployed. A UI that compiles
+  # is the floor; gate 12's real verification is a human clicking through it.
+  web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - name: Types
+        run: npx tsc --noEmit
+
+      - name: Build
+        run: npm run build
+
+      # A finance tool shipping a known CVE is the kind of detail a reviewer
+      # notices. Production dependencies only: dev-tree advisories do not reach
+      # the served page.
+      - name: Audit
+        run: npm audit --omit=dev

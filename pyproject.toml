@@ -21,6 +21,11 @@ dev = [
     "hypothesis>=6.100",
     "ruff>=0.4",
     "mypy>=1.9",
+    # fastapi.testclient refuses to import without it. Present locally only
+    # because the `llm` extra happens to pull it in, which is exactly why CI —
+    # which installs `.[dev]` alone — caught the omission and a local run
+    # could not.
+    "httpx2>=0.1",
 ]
 # Gate 11 only. Deliberately NOT a base dependency: gates 0-10 must run, and the
 # --no-llm path must keep running, with no LLM client installed at all (§4.4).
@@ -75,3 +80,11 @@ python_version = "3.11"
 strict = true
 warn_unreachable = true
 # core/ and matching/ are where money bugs live (§9.7) — no escape hatches there.
+
+# `anthropic` is an optional extra (§4.4): CI installs `.[dev]` without it on
+# purpose, so that a bare import in a non-LLM code path fails the build. That
+# makes "module not found" the EXPECTED state here, not a typing gap — the SDK
+# is reached through two guarded imports, both of which handle ImportError.
+[[tool.mypy.overrides]]
+module = ["anthropic", "anthropic.*"]
+ignore_missing_imports = true
