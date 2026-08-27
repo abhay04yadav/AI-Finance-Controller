@@ -23,7 +23,7 @@ SEEDS   ?=
 NO_LLM  ?=
 DATA    ?= data/seed$(SEED)
 
-.PHONY: help venv setup generate fee-datasets match eval determinism demo test lint typecheck layer-check drift-check tree clean
+.PHONY: help venv setup generate fee-datasets match eval determinism api web demo test lint typecheck layer-check drift-check tree clean
 
 help:
 	@echo "AI Finance Controller"
@@ -36,6 +36,8 @@ help:
 	@echo "  make match         run the reconciliation pipeline       [gate 8]"
 	@echo "  make eval          score the agent against truth.json    [gate 3]"
 	@echo "  make determinism   two runs of make eval must be identical [gate 11]"
+	@echo "  make api           serve the screens' data on :8000       [gate 12]"
+	@echo "  make web           Next.js on :3000, proxies to the API   [gate 12]"
 	@echo "  make demo          generate + match + eval, demo scale   [gate 14]"
 	@echo ""
 	@echo "  make test          pytest"
@@ -80,6 +82,16 @@ determinism:
 	$(PY) -m eval.evaluate --dataset $(DATA) --seed $(SEED) --scale $(SCALE) --no-timing > .run1.txt
 	$(PY) -m eval.evaluate --dataset $(DATA) --seed $(SEED) --scale $(SCALE) --no-timing > .run2.txt
 	$(PY) scripts/diff_runs.py .run1.txt .run2.txt
+
+# Gate 12. Two processes: the API owns the run, Next.js serves the screens and
+# proxies /api through to it, so the browser sees one origin.
+#   AFC_SEED picks the dataset the whole UI is looking at; ?seed= overrides it
+#   per request, which is how "start on 42, then on 7" is checked.
+api:
+	$(PY) -m uvicorn api.main:app --host 127.0.0.1 --port 8000 --reload
+
+web:
+	cd web && npm run dev
 
 demo:
 	$(MAKE) generate SCALE=5000

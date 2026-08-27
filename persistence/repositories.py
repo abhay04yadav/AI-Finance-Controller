@@ -18,6 +18,19 @@ from typing import Protocol
 
 from core.models import JournalEntry
 
+#: Journal entries are numbered from here. A book of account starts at 1; the
+#: number is the book's, not the entry's, which is why it is issued on `post()`
+#: and not carried on `JournalEntry`. The same entry posted into two different
+#: books gets two different numbers, and that is correct.
+FIRST_ENTRY_NUMBER = 1
+
+
+def format_entry_number(sequence: int) -> str:
+    """`JE-0001`. Zero-padded so the column stays decimal-aligned under
+    `tabular-nums` — a ledger where JE-9 and JE-1000 sit ragged reads as a
+    spreadsheet, not a book (§8.5)."""
+    return f"JE-{sequence:04d}"
+
 
 class JournalRepository(Protocol):
     """Somewhere balanced entries can be kept without the domain knowing how."""
@@ -25,6 +38,8 @@ class JournalRepository(Protocol):
     def post(self, entry: JournalEntry) -> bool: ...
 
     def all(self) -> tuple[JournalEntry, ...]: ...
+
+    def number_for(self, idempotency_key: str) -> str | None: ...
 
     def __len__(self) -> int: ...
 
@@ -38,6 +53,7 @@ class InMemoryJournalRepository:
 
     def __init__(self) -> None:
         self._entries: dict[str, JournalEntry] = {}
+        self._numbers: dict[str, str] = {}
         self._rejected_duplicates = 0
 
     def post(self, entry: JournalEntry) -> bool:
@@ -46,13 +62,34 @@ class InMemoryJournalRepository:
         Balance is re-checked here as well as in the builder: this is the last
         point before an entry becomes part of the books, and §9.4 makes that an
         invariant rather than a convention.
+
+        A successful post is issued the next journal number. Refused duplicates
+        get none — the point of refusing is that nothing was written, and a
+        number handed out for a posting that did not happen would leave a gap
+        in the sequence that nobody could explain.
         """
         entry.assert_balanced()
         if entry.idempotency_key in self._entries:
             self._rejected_duplicates += 1
             return False
         self._entries[entry.idempotency_key] = entry
+        self._numbers[entry.idempotency_key] = format_entry_number(
+            FIRST_ENTRY_NUMBER + len(self._numbers)
+        )
         return True
+
+    def number_for(self, idempotency_key: str) -> str | None:
+        """The journal number this book issued, or None if it holds no such entry."""
+        return self._numbers.get(idempotency_key)
+
+    def entry_for(self, idempotency_key: str) -> JournalEntry | None:
+        return self._entries.get(idempotency_key)
+
+    def numbered(self) -> tuple[tuple[str, JournalEntry], ...]:
+        """Every entry with the number it was issued, in posting order."""
+        return tuple(
+            (self._numbers[key], entry) for key, entry in self._entries.items()
+        )
 
     def all(self) -> tuple[JournalEntry, ...]:
         return tuple(self._entries.values())

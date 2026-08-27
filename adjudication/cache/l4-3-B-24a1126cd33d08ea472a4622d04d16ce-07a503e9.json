@@ -1,0 +1,14 @@
+{
+  "answer": {
+    "classification": "MISSING_IN_LEDGER",
+    "confidence": 0.78,
+    "hypothesis": "Expected gross of ₹24,386.00 against an open pool of only ₹2,685.00 (single row ORD-1114, 2026-03-11) — a shortfall of ₹21,701.00, so no combination of open rows could ever reach the credit. Consistent with the bulk of settlement SETL156's captures never having been ingested into the ledger (missing capture feed for that batch) rather than any pricing or timing variance.",
+    "suggested_action": "RAISE_GATEWAY_TICKET"
+  },
+  "format": 1,
+  "meta": {
+    "model": "claude-opus-5",
+    "prompt_version": "job_b_classify@3e06bd706fe8",
+    "ref": "UTR-21267237"
+  }
+}

@@ -23,8 +23,10 @@ from core.run_result import ExceptionOutcome, MatchOutcome, RunResult
 from exceptions_.actions import available_for
 from ingest.normalizer import load_dataset
 from matching.protocols import MatchContext, MatchStrategy
+from persistence.repositories import JournalRepository
 from pipeline.adjudication_step import adjudicate, apply_hypotheses
 from pipeline.posting_step import Poster
+from pipeline.trace import build_ambiguous, build_unexplained
 
 
 class ReconciliationPipeline:
@@ -40,6 +42,7 @@ class ReconciliationPipeline:
         settings: Settings,
         fee_model_enabled: bool = True,
         adjudicator: Adjudicator | None = None,
+        repository: JournalRepository | None = None,
     ) -> None:
         self._strategies = tuple(strategies)
         self._calendar = calendar
@@ -48,6 +51,10 @@ class ReconciliationPipeline:
         # Null Object, not None: the orchestrator never asks whether it has an
         # adjudicator, so there is no `if` here for a later gate to get wrong.
         self._adjudicator: Adjudicator = adjudicator or NullAdjudicator()
+        # Injected so the API can keep the book after the run returns and go on
+        # issuing journal numbers as a controller acts. `None` means the Poster
+        # opens a fresh one, which is what the eval and every test want.
+        self._repository = repository
 
     def run(self, dataset: Path) -> RunResult:
         timings: dict[str, float] = {}
@@ -82,7 +89,9 @@ class ReconciliationPipeline:
 
         # L5 — the step that closes the loop (§4.5).
         t = time.perf_counter()
-        posting = Poster(settings=self._settings).post_all(ctx)
+        posting = Poster(
+            self._repository, settings=self._settings
+        ).post_all(ctx)
         timings["L5_post"] = (time.perf_counter() - t) * 1000
 
         matches = {
@@ -133,6 +142,11 @@ class ReconciliationPipeline:
             for f in ingested.failures
         ]
 
+        # One credit, one card (§8.2). Several checks can fire on the same
+        # reference and each be true; the most explanatory one is shown and the
+        # rest are folded into it. See `core.reason_codes._PRECEDENCE`.
+        exceptions = _one_card_per_ref(exceptions)
+
         # ACTION is the third leg of every card (§8.2). Attached here, from the
         # registry, so the UI renders whatever is_available() returned rather
         # than a hardcoded button list (§8.3).
@@ -143,6 +157,36 @@ class ReconciliationPipeline:
 
         # Job B's hypotheses become the WHY on the cards they explain (§8.2).
         final = apply_hypotheses(tuple(exceptions), adjudication)
+
+        # The books count what the exception page shows. Recomputed from the
+        # deduped list rather than from the raw flags, because two screens
+        # quoting different totals for the same money is the defect this whole
+        # collapse exists to fix — fixing it on one screen only would be worse
+        # than not fixing it at all.
+        position = posting.cash_position
+        problems = [e for e in final if not e.is_in_transit]
+        position = replace(
+            position,
+            exceptions=len(problems),
+            exceptions_paise=sum(e.amount_paise or 0 for e in problems),
+        )
+
+        # The §8.5 trail: matches got theirs while their entries were built;
+        # exceptions get theirs from the evidence L3 recorded when it gave up.
+        # Merged rather than rebuilt, because the residual pool L3 searched no
+        # longer exists by the time the run returns.
+        by_utr = {a.credit_utr: a for a in ctx.ambiguities}
+        traces = dict(posting.traces)
+        for evidence in ctx.unexplained:
+            traces[evidence.ref] = build_unexplained(
+                evidence, by_utr.get(evidence.ref)
+            )
+        # An ambiguous credit has no unexplained evidence — the arithmetic
+        # worked, several times over — so its trail is drawn from the candidates
+        # instead. Without this the one card that most needs a diagram is the
+        # only card without one.
+        for ambiguity in ctx.ambiguities:
+            traces.setdefault(ambiguity.credit_utr, build_ambiguous(ambiguity))
 
         return RunResult(
             matches=matches,
@@ -165,6 +209,63 @@ class ReconciliationPipeline:
             fee_model_summary=ctx.fee_model.describe() if ctx.fee_model else "",
             entries=posting.entries,
             review_queue=posting.review_queue,
-            cash_position=posting.cash_position,
+            cash_position=position,
             duplicate_postings_refused=posting.duplicates_refused,
+            traces=traces,
+            entry_numbers=posting.entry_numbers,
         )
+
+
+def _one_card_per_ref(
+    exceptions: list[ExceptionOutcome],
+) -> list[ExceptionOutcome]:
+    """Collapse several findings about one credit into the card that explains it.
+
+    A settlement whose orders are absent from the ledger trips two checks: the
+    coverage check says MISSING_IN_LEDGER, and L3 says AMOUNT_MISMATCH because
+    it could not explain the credit — which is true, and is true *because* the
+    orders are missing. Two cards for one problem overstates the count, and
+    because the header sums the cards, overstates the money too.
+
+    The surviving card keeps the more explanatory reason code and gains a line
+    naming what else was raised, so nothing is silently dropped. In-transit rows
+    never take part: they live in their own collection and share no ref space
+    with bank credits (Appendix A).
+    """
+    from core.reason_codes import precedence_of
+
+    best: dict[str, ExceptionOutcome] = {}
+    folded: dict[str, list[ExceptionOutcome]] = {}
+    order: list[str] = []
+
+    for exc in exceptions:
+        # In-transit rows are keyed apart so a ledger row and a bank credit
+        # that happen to share a reference cannot collide.
+        key = f"in-transit:{exc.ref}" if exc.is_in_transit else exc.ref
+        if key not in best:
+            best[key] = exc
+            folded[key] = []
+            order.append(key)
+            continue
+        incumbent = best[key]
+        if precedence_of(exc.reason_code) < precedence_of(incumbent.reason_code):
+            best[key] = exc
+            folded[key].append(incumbent)
+        else:
+            folded[key].append(exc)
+
+    out: list[ExceptionOutcome] = []
+    for key in order:
+        exc = best[key]
+        others = folded[key]
+        if others:
+            also = ", ".join(sorted({str(o.reason_code) for o in others}))
+            exc = replace(
+                exc,
+                why=(
+                    f"{exc.why} Also raised as {also}, which follows from this "
+                    "and is not a separate problem."
+                ).strip(),
+            )
+        out.append(exc)
+    return out

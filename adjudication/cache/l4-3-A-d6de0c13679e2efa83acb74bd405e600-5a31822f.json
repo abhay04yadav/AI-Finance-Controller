@@ -1,0 +1,18 @@
+{
+  "answer": {
+    "confidence": 0.3,
+    "evidence_fields": [
+      "narration",
+      "settlement_id",
+      "capture_date"
+    ],
+    "reason": "SETL106 in the narration has no settlement_id counterpart (all blank), and A-E all share ORD-1007/1065/1128/1254 with equally spread 08-15 Jan captures plus stale refunds; non-exhaustive search.",
+    "selected": "NONE"
+  },
+  "format": 1,
+  "meta": {
+    "model": "claude-opus-5",
+    "prompt_version": "job_a_select@d3ec30954a34",
+    "ref": "UTR-41039390"
+  }
+}

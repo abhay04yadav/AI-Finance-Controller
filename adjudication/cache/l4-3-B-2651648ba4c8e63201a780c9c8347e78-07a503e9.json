@@ -1,0 +1,14 @@
+{
+  "answer": {
+    "classification": "MISSING_IN_LEDGER",
+    "confidence": 0.76,
+    "hypothesis": "Expected gross of ₹18,500.00 versus an open pool of just ₹4,600.00 (single row ORD-1123, captured 2026-03-23) — ₹13,900.00 of the credit has no ledger backing at all, so the search could not have succeeded. Consistent with only part of settlement SETL160's captures being present in the ledger; the remaining orders are likely un-ingested rather than mispriced.",
+    "suggested_action": "RAISE_GATEWAY_TICKET"
+  },
+  "format": 1,
+  "meta": {
+    "model": "claude-opus-5",
+    "prompt_version": "job_b_classify@3e06bd706fe8",
+    "ref": "UTR-71968116"
+  }
+}

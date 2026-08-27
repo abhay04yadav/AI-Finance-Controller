@@ -1,0 +1,14 @@
+{
+  "answer": {
+    "classification": "MISSING_IN_LEDGER",
+    "confidence": 0.78,
+    "hypothesis": "Expected gross of ₹24,685.00 against an open pool that is entirely negative (2 refund rows totalling -₹1,340.96); there are no capture rows at all in the window, so no combination could ever reach the target. Consistent with the sale-side ledger for settlement batch SETL120 never having been ingested, leaving only RFND-5002 (-₹206.46) and RFND-5004 (-₹1,134.50) unclaimed.",
+    "suggested_action": "ESCALATE"
+  },
+  "format": 1,
+  "meta": {
+    "model": "claude-opus-5",
+    "prompt_version": "job_b_classify@3e06bd706fe8",
+    "ref": "UTR-12629509"
+  }
+}

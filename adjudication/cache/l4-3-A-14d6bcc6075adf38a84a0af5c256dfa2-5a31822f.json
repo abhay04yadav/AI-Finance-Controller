@@ -1,0 +1,18 @@
+{
+  "answer": {
+    "confidence": 0.3,
+    "evidence_fields": [
+      "narration",
+      "settlement_id",
+      "capture_date"
+    ],
+    "reason": "Narration cites SETL101 but no candidate carries any settlement_id (all blank), so the batch reference cannot be matched; capture dates are equally spread 05-08 Jan across all options and the candidate list is not exhaustive.",
+    "selected": "NONE"
+  },
+  "format": 1,
+  "meta": {
+    "model": "claude-opus-5",
+    "prompt_version": "job_a_select@d3ec30954a34",
+    "ref": "UTR-77744470"
+  }
+}

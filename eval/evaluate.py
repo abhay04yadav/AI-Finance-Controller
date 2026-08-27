@@ -306,6 +306,17 @@ def snapshot(metrics: Metrics) -> Path:
 
 
 def main(argv: list[str] | None = None) -> int:
+    # This is the other entry point that can reach L4, so it reads `.env` too:
+    # a key that works for `make api` and not for `make eval` is the kind of gap
+    # nobody finds until a demo.
+    #
+    # Inlined rather than imported from `api/deps.py`, which holds the same six
+    # lines. §3.2 forbids `eval/` importing `api/` and the layering check
+    # enforces it — correctly, since the two are separate delivery mechanisms
+    # that happen to share a bootstrap step. Duplicating six lines is the
+    # cheaper of the two prices.
+    _load_env()
+
     parser = argparse.ArgumentParser(
         prog="eval.evaluate",
         description="Score the agent against planted ground truth.",
@@ -368,3 +379,26 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+
+def _load_env() -> None:
+    """Read `.env` into the environment, if there is one.
+
+    `override=False`: an exported variable beats the file, so
+    `ANTHROPIC_API_KEY=... make eval` does what it looks like it does.
+
+    A missing file is not an error — `--no-llm` is a first-class mode (§4.4)
+    and a clean clone has no `.env` at all.
+    """
+    from pathlib import Path
+
+    env = Path(__file__).resolve().parent.parent / ".env"
+    if not env.exists():
+        return
+    try:
+        from dotenv import load_dotenv
+    except ImportError:
+        # Declared in pyproject; only a partial install lands here. The run
+        # continues without a key, which is a supported state, not a failure.
+        return
+    load_dotenv(env, override=False)

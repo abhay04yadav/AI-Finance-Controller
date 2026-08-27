@@ -22,12 +22,13 @@ would make the books disagree with the bank.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from core.config import Settings
 from core.models import CashPosition, Direction, JournalEntry, MatchProposal, Record
 from core.reason_codes import ReasonCode
 from core.run_result import ReviewItem
+from core.trace import Trace
 from exceptions_.classifier import (
     LedgerFinding,
     classify_unsettled_ledger_rows,
@@ -36,6 +37,7 @@ from exceptions_.classifier import (
 from matching.fee_model import FeeModel
 from matching.protocols import MatchContext
 from persistence.repositories import InMemoryJournalRepository, JournalRepository
+from pipeline.trace import build_explained
 from posting.cash_position import compute_cash_position
 from posting.confidence_router import Route, route_for
 from posting.journal_builder import build_settlement_entry, build_suspense_entry
@@ -49,6 +51,11 @@ class PostingResult:
     duplicates_refused: int
     #: Unsettled ledger rows: in-transit money and never-settling sales.
     findings: tuple[LedgerFinding, ...] = ()
+    #: The §8.5 trail behind every match, keyed by UTR. Built here because this
+    #: is where the rows, the fee split and the credit are all in hand at once.
+    traces: dict[str, Trace] = field(default_factory=dict)
+    #: Journal number per posted entry, as the book issued it.
+    entry_numbers: dict[str, str] = field(default_factory=dict)
 
 
 class Poster:
@@ -73,12 +80,14 @@ class Poster:
         fee = ctx.fee_model or FeeModel.disabled()
         review: list[ReviewItem] = []
         posted_utrs: set[str] = set()
+        traces: dict[str, Trace] = {}
 
         for proposal in sorted(ctx.accepted, key=lambda p: p.bank_utr):
             credit = ctx.bank_by_utr.get(proposal.bank_utr, [None])[0]
             if credit is None:
                 continue
             entry = self._entry_for(ctx, proposal, credit, fee)
+            traces[proposal.bank_utr] = self._trace_for(ctx, proposal, credit, fee)
 
             match route_for(proposal.confidence, self._settings):
                 case Route.AUTO_POST:
@@ -166,8 +175,18 @@ class Poster:
             ),
         )
         refused = getattr(self._repo, "rejected_duplicates", 0)
+        numbers = {
+            e.idempotency_key: self._repo.number_for(e.idempotency_key) or ""
+            for e in entries
+        }
         return PostingResult(
-            entries, tuple(review), position, refused, tuple(findings)
+            entries,
+            tuple(review),
+            position,
+            refused,
+            tuple(findings),
+            traces=traces,
+            entry_numbers=numbers,
         )
 
     # ------------------------------------------------------------------
@@ -187,6 +206,52 @@ class Poster:
             if row.direction is Direction.INFLOW
         ]
         return rows
+
+    def _trace_for(
+        self,
+        ctx: MatchContext,
+        proposal: MatchProposal,
+        credit: Record,
+        fee: FeeModel,
+    ) -> Trace:
+        """The §8.5 trail for one match, from the same figures the entry used."""
+        rows = [
+            ctx.ledger_by_id[oid]
+            for oid in sorted(proposal.ledger_ids)
+            if oid in ctx.ledger_by_id
+        ]
+        fee_paise, gst_paise = self._fee_split(ctx, proposal, rows, fee)
+        return build_explained(
+            proposal, credit, rows, fee, fee_paise=fee_paise, gst_paise=gst_paise
+        )
+
+    def _fee_split(
+        self,
+        ctx: MatchContext,
+        proposal: MatchProposal,
+        rows: list[Record],
+        fee: FeeModel,
+    ) -> tuple[int, int]:
+        """The gateway's stated fee and GST, or the inferred ones when L3
+        explained a credit that has no settlement row to quote.
+
+        Extracted so the entry and the trace cannot disagree about the split —
+        two call sites recomputing the same thing is how a diagram ends up
+        describing a posting that was never made.
+        """
+        settlement = (
+            ctx.settlement_by_id.get(proposal.settlement_id)
+            if proposal.settlement_id
+            else None
+        )
+        if settlement is not None:
+            detail = settlement.settlement()
+            return detail.fee.paise, detail.gst.paise
+        gross_orders = sum(
+            r.amount.paise for r in rows if r.direction is Direction.INFLOW
+        )
+        fee_paise = int(gross_orders * fee.rate)
+        return fee_paise, int(fee_paise * fee.gst_rate)
 
     def _entry_for(
         self,
@@ -215,17 +280,7 @@ class Poster:
             r.amount.paise for r in rows if r.direction is Direction.OUTFLOW
         )
 
-        settlement = (
-            ctx.settlement_by_id.get(proposal.settlement_id)
-            if proposal.settlement_id
-            else None
-        )
-        if settlement is not None:
-            detail = settlement.settlement()
-            fee_paise, gst_paise = detail.fee.paise, detail.gst.paise
-        else:
-            fee_paise = int(gross_orders * fee.rate)
-            gst_paise = int(fee_paise * fee.gst_rate)
+        fee_paise, gst_paise = self._fee_split(ctx, proposal, rows, fee)
 
         return build_settlement_entry(
             entry_date=credit.value_date,

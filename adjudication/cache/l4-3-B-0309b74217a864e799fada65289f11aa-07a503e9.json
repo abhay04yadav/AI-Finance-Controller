@@ -1,0 +1,14 @@
+{
+  "answer": {
+    "classification": "MISSING_IN_LEDGER",
+    "confidence": 0.82,
+    "hypothesis": "The credit of ₹23,193.12 inverts to an expected gross of ₹23,705.00 at the inferred 1.83% MDR, but the entire open pool in this window is just two refund rows (RFND-5001 at -₹786.99 and RFND-5002 at -₹1,165.16) totalling -₹1,952.15 — no positive capture rows exist at all, so no combination could ever reach the target. This is consistent with the underlying sales for settlement batch 113 never having been ingested into the ledger (feed gap or a capture file that failed to load), rather than a pricing or timing variance.",
+    "suggested_action": "ESCALATE"
+  },
+  "format": 1,
+  "meta": {
+    "model": "claude-opus-5",
+    "prompt_version": "job_b_classify@3e06bd706fe8",
+    "ref": "UTR-81979055"
+  }
+}

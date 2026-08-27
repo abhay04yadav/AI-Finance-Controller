@@ -1,0 +1,14 @@
+{
+  "answer": {
+    "classification": "MISSING_IN_LEDGER",
+    "confidence": 0.77,
+    "hypothesis": "Expected gross of ₹18,500.00 versus an open pool of one row worth ₹4,600.00 (ORD-1123, captured 2026-03-23) — ₹13,900.00 short, about 75% of the target unaccounted for. The gap is far too large for an MDR slab or rounding variance, so the remaining orders in settlement SETL160 are absent from the ledger; request the gateway's settlement breakdown to identify the uningested captures.",
+    "suggested_action": "RAISE_GATEWAY_TICKET"
+  },
+  "format": 1,
+  "meta": {
+    "model": "claude-opus-5",
+    "prompt_version": "job_b_classify@3e06bd706fe8",
+    "ref": "UTR-71968116"
+  }
+}

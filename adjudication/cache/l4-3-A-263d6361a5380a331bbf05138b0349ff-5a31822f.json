@@ -1,0 +1,18 @@
+{
+  "answer": {
+    "confidence": 0.3,
+    "evidence_fields": [
+      "narration",
+      "settlement_id",
+      "capture_date"
+    ],
+    "reason": "Narration reference RZPSETL104 cannot be matched because every ledger row has an empty settlement_id, and all candidates show the same scattered 06-13 Jan captures plus a Dec-25 refund; search was not exhaustive.",
+    "selected": "NONE"
+  },
+  "format": 1,
+  "meta": {
+    "model": "claude-opus-5",
+    "prompt_version": "job_a_select@d3ec30954a34",
+    "ref": "UTR-28572252"
+  }
+}

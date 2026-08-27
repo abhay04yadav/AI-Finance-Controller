@@ -12,6 +12,7 @@ str(x) == x.value, so enums are safe in f-strings, narrations, and JSONB.
 requires-python is >=3.11, so StrEnum is always available.
 """
 
+from collections.abc import Iterable
 from enum import StrEnum
 
 
@@ -127,3 +128,52 @@ def disposition_of(code: ReasonCode) -> Disposition:
 def is_resolvable(code: ReasonCode) -> bool:
     return disposition_of(code) is Disposition.RESOLVABLE
 
+
+#: Root cause beats symptom. Guide §8.2.
+#:
+#: One credit can trip several checks at once, and on seed 42 two of them do:
+#: a settlement whose orders are absent from the ledger raises
+#: MISSING_IN_LEDGER from the coverage check AND AMOUNT_MISMATCH from L3, which
+#: could not explain the credit precisely BECAUSE the orders are missing. Both
+#: sentences are true. Showing both is still wrong: it puts one problem on two
+#: cards, tells a controller there are nine when there are seven, and — because
+#: the header sums the cards — overstates the unreconciled figure by the
+#: duplicated amount. On seed 42 that was Rs 41,959.94 of a stated Rs 1,50,918.37.
+#:
+#: Lower number wins. The ordering is by explanatory power: a code that says
+#: WHY the money cannot be matched outranks one that only says THAT it cannot.
+_PRECEDENCE: dict[ReasonCode, int] = {
+    # The row could not be read. Nothing downstream means anything.
+    ReasonCode.INGEST_ERROR: 0,
+    # The statement itself is at fault, before any matching is attempted.
+    ReasonCode.DUPLICATE_UTR: 1,
+    # The counterparty rows do not exist. Everything else follows from this.
+    ReasonCode.MISSING_IN_LEDGER: 2,
+    # A model was asked and its answer was thrown out.
+    ReasonCode.ADJUDICATION_REJECTED: 3,
+    # Several combinations fit and nothing separated them.
+    ReasonCode.AMBIGUOUS_UNADJUDICATED: 4,
+    # Named causes: each says something specific about the gap.
+    ReasonCode.FX_OR_SLAB_VARIANCE: 5,
+    ReasonCode.CROSS_PERIOD_REFUND: 6,
+    ReasonCode.HOLIDAY_SHIFT: 7,
+    ReasonCode.LATE_AUTHORIZATION: 8,
+    ReasonCode.AUTO_REFUNDED: 9,
+    ReasonCode.ROUNDING_DRIFT: 10,
+    # The catch-all. True whenever any of the above is true, so it loses to
+    # all of them: "nothing adds up" is the least useful thing we can say.
+    ReasonCode.AMOUNT_MISMATCH: 11,
+    # Not a failure at all, and never in competition — in-transit rows are
+    # kept in their own collection (Appendix A).
+    ReasonCode.AWAITING_SETTLEMENT: 99,
+}
+
+
+def precedence_of(code: ReasonCode) -> int:
+    """How strongly this code explains a credit. Lower is more explanatory."""
+    return _PRECEDENCE.get(code, 50)
+
+
+def most_explanatory(codes: "Iterable[ReasonCode]") -> ReasonCode:
+    """Of several codes raised against one reference, the one to show."""
+    return min(codes, key=precedence_of)

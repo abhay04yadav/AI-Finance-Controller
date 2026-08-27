@@ -1,0 +1,797 @@
+/*
+ * Design tokens, lifted verbatim from
+ * docs/AI Finance Controller wireframes/Exceptions Wireframes.dc.html
+ * frames 2a / 2b / 2c / 2d / 3a / 3b.
+ *
+ * Every hex value and every size below appears in that file. Nothing here is a
+ * "close enough" substitute — the palette is a warm paper stack with three
+ * accents, and approximating it turns a considered document into a beige
+ * dashboard.
+ *
+ * TWO TYPEFACES, and the split is semantic rather than decorative:
+ *
+ *   IBM Plex Mono  every figure, every code, every label. Monospaced digits
+ *                  are what make a column of money legible, and this is a
+ *                  ledger before it is a web page.
+ *   Newsreader     reasoning prose only — WHAT, WHY, the explanatory lines.
+ *                  A serif signals "read this sentence" against a screen of
+ *                  numbers, which is exactly the distinction §8.2 draws.
+ *
+ * `font-variant-numeric: tabular-nums` is on the root and never turned off.
+ * Misaligned decimals in a finance tool read as amateur immediately (§8.5).
+ */
+
+@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&display=swap");
+
+:root {
+  /* -- paper ------------------------------------------------------- */
+  --paper: #fbf8f2;          /* card ground */
+  --paper-sunk: #f5f0e5;     /* table headers, trace panel */
+  --paper-settled: #f6f3ec;  /* a row that has been acted on (3a) */
+  --edge: #d6cdbc;           /* card border */
+
+  /* -- ink, darkest to faintest ------------------------------------ */
+  --ink: #191713;            /* figures, rules, primary */
+  --ink-prose: #2b2721;      /* Newsreader body */
+  --ink-row: #3d382f;        /* secondary row text */
+  --ink-muted: #5d564a;
+  --ink-dim: #7a7263;
+  --ink-label: #8c8375;      /* eyebrows, meta, units */
+  --ink-faint: #a2998a;
+  --ink-ghost: #b3a892;      /* dashed borders, disabled */
+
+  /* -- rules ------------------------------------------------------- */
+  --rule-heavy: #191713;
+  --rule: #e6dfd0;
+  --rule-light: #efe9dc;
+  --rule-panel: #e2d9c8;
+  --rule-panel-edge: #ddd4c2;
+  --rule-key: #c3b9a6;       /* keycap borders, in-transit dashes */
+  --rule-chip: #ccc3b1;
+
+  /* -- accents ----------------------------------------------------- */
+  --red: #9e2b1e;            /* exception dot, unexplained residual */
+  --red-rule: #e0c9c4;
+  --green: #2f6b45;          /* in transit, balanced, cleared */
+  --green-edge: #cddbd0;
+  --green-panel: #f2f5f1;
+  --green-label: #5d7a64;
+  --green-prose: #3f5a47;
+  --green-faint: #8ca392;
+  --green-rule: #bcd0c1;
+  --band-exception: #e0d2cd; /* confidence bar, left segment */
+
+  --keycap: #ffffff;
+
+  /* -- type -------------------------------------------------------- */
+  --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+  --serif: "Newsreader", Georgia, serif;
+
+  /* -- the ledger grid, from frame 2a ------------------------------ */
+  --col-amount: 168px;
+  --col-balance: 178px;
+  --gutter: 40px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: #e9e5dc;
+  color: var(--ink);
+  font-family: var(--mono);
+  /* Never switched off anywhere. §8.5. */
+  font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ---------------------------------------------------------------- shell */
+
+.shell {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 28px 20px 64px;
+}
+
+.card {
+  background: var(--paper);
+  border: 1px solid var(--edge);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+}
+
+/* ------------------------------------------------------------------ nav */
+
+.nav {
+  display: flex;
+  align-items: baseline;
+  gap: 26px;
+  padding: 0 0 20px;
+  font: 400 12px var(--mono);
+}
+
+.nav a {
+  color: var(--ink-label);
+  text-decoration: none;
+  letter-spacing: 0.02em;
+  padding-bottom: 3px;
+  border-bottom: 1px solid transparent;
+}
+
+.nav a:hover {
+  color: var(--ink);
+}
+
+.nav a[aria-current="page"] {
+  color: var(--ink);
+  border-bottom-color: var(--ink);
+}
+
+.nav .brand {
+  font-weight: 500;
+  color: var(--ink);
+  margin-right: 4px;
+}
+
+.nav .spacer {
+  flex: 1;
+}
+
+.nav .seed {
+  color: var(--ink-label);
+}
+
+.nav .seed b {
+  font-weight: 500;
+  color: var(--ink);
+}
+
+/* -------------------------------------------------------------- eyebrow */
+
+.eyebrow {
+  font: 400 11px/1 var(--mono);
+  letter-spacing: 0.14em;
+  color: var(--ink-label);
+  text-transform: uppercase;
+}
+
+.label-sm {
+  font: 400 9.5px var(--mono);
+  letter-spacing: 0.14em;
+  color: var(--ink-label);
+  text-transform: uppercase;
+}
+
+/* --------------------------------------------------------------- figures */
+
+.hero {
+  font: 500 44px/1 var(--mono);
+  letter-spacing: -0.03em;
+  color: var(--ink);
+}
+
+.hero-lg {
+  font: 500 56px/1 var(--mono);
+  letter-spacing: -0.035em;
+  color: var(--ink);
+}
+
+.hero-xl {
+  font: 500 62px/1 var(--mono);
+  letter-spacing: -0.04em;
+  color: var(--ink);
+}
+
+.hero-sm {
+  font: 500 34px/1 var(--mono);
+  letter-spacing: -0.03em;
+  color: var(--ink);
+}
+
+.stat {
+  font: 500 30px/1 var(--mono);
+  letter-spacing: -0.02em;
+  color: var(--ink);
+}
+
+.beside {
+  font: 400 15px/1 var(--mono);
+  color: var(--ink-label);
+}
+
+/* ----------------------------------------------------------------- prose */
+
+.prose {
+  font: 400 15.5px/1.5 var(--serif);
+  color: var(--ink-prose);
+  text-wrap: pretty;
+}
+
+.prose-sm {
+  font: 400 13.5px/1.45 var(--serif);
+  color: var(--ink-dim);
+  text-wrap: pretty;
+}
+
+.prose-md {
+  font: 400 14.5px/1.5 var(--serif);
+  color: var(--ink-muted);
+  text-wrap: pretty;
+}
+
+.prose-lead {
+  font: 400 15px/1.5 var(--serif);
+  color: var(--ink-muted);
+  text-wrap: pretty;
+}
+
+.prose-xl {
+  font: 400 22px/1.35 var(--serif);
+  color: var(--ink);
+  text-wrap: pretty;
+}
+
+.hypothesis {
+  font-style: italic;
+  color: var(--ink-dim);
+}
+
+/* ------------------------------------------------------------ the ledger */
+
+.ledger-head {
+  display: grid;
+  grid-template-columns: 1fr var(--col-amount) var(--col-balance);
+  padding: 9px var(--gutter);
+  border-top: 1px solid var(--rule-heavy);
+  border-bottom: 1px solid var(--rule-heavy);
+  font: 400 9.5px var(--mono);
+  letter-spacing: 0.14em;
+  color: var(--ink-label);
+  text-transform: uppercase;
+}
+
+.ledger-body {
+  padding: 0 var(--gutter);
+}
+
+.row {
+  border-bottom: 1px solid var(--rule);
+  padding: 17px 0;
+  position: relative;
+}
+
+.row-open {
+  padding: 20px 0 24px;
+}
+
+.row-grid {
+  display: grid;
+  grid-template-columns: 1fr var(--col-amount) var(--col-balance);
+  align-items: center;
+}
+
+.row-grid-top {
+  align-items: start;
+}
+
+.row-bar {
+  position: absolute;
+  left: calc(-1 * var(--gutter));
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: var(--ink);
+}
+
+.row-bar-done {
+  background: var(--green);
+}
+
+.row-settled {
+  background: var(--paper-settled);
+}
+
+.row-head {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding-right: 36px;
+}
+
+.dot {
+  width: 7px;
+  height: 7px;
+  background: var(--red);
+  border-radius: 50%;
+  flex: none;
+}
+
+.code {
+  font: 500 13.5px var(--mono);
+  letter-spacing: 0.01em;
+  color: var(--ink);
+}
+
+.code-done {
+  color: var(--ink-muted);
+  text-decoration: line-through;
+  text-decoration-color: var(--ink-ghost);
+}
+
+.meta {
+  font: 400 12.5px var(--mono);
+  color: var(--ink-label);
+}
+
+.amount {
+  text-align: right;
+  font: 400 17px var(--mono);
+  letter-spacing: -0.01em;
+  color: var(--ink);
+  white-space: nowrap;
+}
+
+.balance {
+  text-align: right;
+  font: 500 17px var(--mono);
+  letter-spacing: -0.01em;
+  color: var(--ink);
+  white-space: nowrap;
+}
+
+.balance-rest {
+  font-weight: 400;
+  color: var(--ink-muted);
+}
+
+.balance-cleared {
+  color: var(--ink-faint);
+  font-weight: 400;
+}
+
+/* WHAT / WHY grid, frame 2a */
+.whatwhy {
+  margin-top: 16px;
+  display: grid;
+  grid-template-columns: 58px 1fr;
+  gap: 10px 16px;
+  max-width: 600px;
+}
+
+.whatwhy .label-sm {
+  padding-top: 5px;
+  color: var(--ink-faint);
+}
+
+/* ---------------------------------------------------------------- chips */
+
+.chips {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  font: 400 11px var(--mono);
+  letter-spacing: 0.02em;
+}
+
+.chip {
+  padding: 5px 10px;
+  border: 1px solid var(--rule-chip);
+  border-radius: 3px;
+  color: var(--ink-row);
+  background: none;
+  cursor: pointer;
+  font: inherit;
+}
+
+.chip[aria-pressed="true"] {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: var(--paper);
+}
+
+.chip .n {
+  color: var(--ink-label);
+}
+
+.chip[aria-pressed="true"] .n {
+  color: var(--ink-ghost);
+}
+
+/* -------------------------------------------------------------- buttons */
+
+.actions {
+  display: flex;
+  gap: 9px;
+  margin-top: 20px;
+  flex-wrap: wrap;
+  align-items: center;
+  font: 400 12.5px var(--mono);
+}
+
+.btn {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 15px;
+  border: 1px solid var(--ink);
+  color: var(--ink);
+  background: none;
+  font: inherit;
+  cursor: pointer;
+}
+
+.btn:hover {
+  background: var(--paper-sunk);
+}
+
+.btn-primary {
+  background: var(--ink);
+  color: var(--paper);
+}
+
+.btn-primary:hover {
+  background: #000;
+}
+
+.btn-primary .k {
+  opacity: 0.55;
+}
+
+.btn .k {
+  color: var(--ink-faint);
+}
+
+.btn-ghost {
+  border: 1px dashed var(--ink-ghost);
+  color: var(--ink-dim);
+}
+
+.btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+/* ---------------------------------------------------------- the keycaps */
+
+.keys {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: flex-end;
+  font: 400 11.5px var(--mono);
+  color: var(--ink-muted);
+  margin-top: 6px;
+}
+
+.keyrow {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.keycap {
+  padding: 2px 6px;
+  border: 1px solid var(--rule-key);
+  border-radius: 3px;
+  background: var(--keycap);
+  font-size: 10.5px;
+}
+
+/* ----------------------------------------------------------- the trace */
+
+.trace {
+  margin-top: 24px;
+  border: 1px solid var(--rule-panel-edge);
+  background: var(--paper-sunk);
+}
+
+.trace-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 11px 22px;
+  border-bottom: 1px solid var(--rule-panel);
+}
+
+.trace-residual {
+  font: 400 12px var(--mono);
+  color: var(--red);
+}
+
+.trace-body {
+  padding: 22px 22px 18px;
+}
+
+.trace svg {
+  display: block;
+  overflow: visible;
+}
+
+/* --------------------------------------------------------- in transit */
+
+.transit {
+  margin: 0 var(--gutter) 34px;
+  border-top: 1px solid var(--rule-heavy);
+  padding-top: 22px;
+}
+
+.transit-total {
+  font: 400 24px var(--mono);
+  letter-spacing: -0.02em;
+  color: var(--green);
+}
+
+.transit-row {
+  display: grid;
+  grid-template-columns: 1fr var(--col-amount) var(--col-balance);
+  padding: 12px 0;
+  border-bottom: 1px dashed var(--rule-key);
+  align-items: center;
+}
+
+.transit-row:last-of-type {
+  border-bottom: none;
+}
+
+.transit-row .amount {
+  font-size: 15px;
+  color: var(--ink-row);
+}
+
+.transit-label {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font: 400 12.5px var(--mono);
+  color: var(--ink-row);
+}
+
+/* the drifting dashes: money on its way, not money missing */
+@keyframes drift {
+  to {
+    stroke-dashoffset: -24;
+  }
+}
+
+@keyframes blink {
+  0%,
+  100% {
+    opacity: 0.25;
+  }
+  50% {
+    opacity: 0.9;
+  }
+}
+
+@keyframes creep {
+  0% {
+    transform: translateX(0);
+  }
+  100% {
+    transform: translateX(6px);
+  }
+}
+
+@keyframes creepdot {
+  0%,
+  100% {
+    opacity: 0.2;
+  }
+  50% {
+    opacity: 0.85;
+  }
+}
+
+.drift {
+  animation: drift 1.3s linear infinite;
+}
+
+.blink {
+  animation: blink 1.1s ease-in-out infinite;
+}
+
+.creepdot {
+  display: inline-block;
+  animation: creepdot 1s infinite;
+}
+
+/* ---------------------------------------------------------- green panel */
+
+.panel-green {
+  border: 1px solid var(--green-edge);
+  background: var(--green-panel);
+  padding: 20px 22px;
+}
+
+.panel-green .label-sm {
+  color: var(--green-label);
+}
+
+.panel-green .prose-md {
+  color: var(--green-prose);
+}
+
+/* -------------------------------------------------------------- tables */
+
+.tbl {
+  font: 400 13.5px var(--mono);
+  color: var(--ink);
+}
+
+.tbl-head {
+  font-size: 9.5px;
+  letter-spacing: 0.12em;
+  color: var(--ink-label);
+  text-transform: uppercase;
+}
+
+.tbl-row {
+  display: grid;
+  padding: 11px 0;
+  border-bottom: 1px solid var(--rule-light);
+  align-items: baseline;
+}
+
+.tbl-row:last-child {
+  border-bottom: none;
+}
+
+.num {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.dim {
+  color: var(--ink-label);
+  font-size: 12px;
+}
+
+/* ----------------------------------------------------- journal entries */
+
+.je {
+  margin-top: 18px;
+  border: 1px solid var(--ink);
+}
+
+.je-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 9px 16px;
+  border-bottom: 1px solid var(--ink);
+  background: var(--paper-sunk);
+}
+
+.je-row {
+  display: grid;
+  grid-template-columns: 1fr 122px 122px;
+  padding: 9px 16px;
+  border-bottom: 1px solid var(--rule-light);
+  font: 400 13px var(--mono);
+}
+
+.je-row-head {
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--rule);
+  font-size: 9.5px;
+  letter-spacing: 0.12em;
+  color: var(--ink-label);
+  text-transform: uppercase;
+}
+
+.je-row-last {
+  border-bottom: 1px solid var(--ink);
+}
+
+.je-foot {
+  display: grid;
+  grid-template-columns: 1fr 122px 122px;
+  padding: 10px 16px;
+  align-items: center;
+  background: var(--paper-sunk);
+  font: 500 13px var(--mono);
+}
+
+.balanced {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 11.5px;
+  letter-spacing: 0.06em;
+  color: var(--green);
+  font-weight: 400;
+}
+
+.unbalanced {
+  color: var(--red);
+}
+
+/* -------------------------------------------------- confidence gradient */
+
+.confbar {
+  position: relative;
+  height: 26px;
+}
+
+.confbar .track {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 11px;
+  height: 4px;
+  display: flex;
+}
+
+.confbar .labels {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  display: flex;
+  font: 400 9.5px var(--mono);
+  letter-spacing: 0.1em;
+  color: var(--ink-label);
+  text-transform: uppercase;
+}
+
+.confbar .edges {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 19px;
+  display: flex;
+  font: 400 10px var(--mono);
+  color: var(--ink-faint);
+}
+
+.meter {
+  width: 76px;
+  height: 4px;
+  background: var(--rule);
+  position: relative;
+  display: inline-block;
+}
+
+.meter span {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  background: var(--ink);
+}
+
+/* ------------------------------------------------------------- states */
+
+.notice {
+  padding: 14px 18px;
+  border: 1px dashed var(--ink-ghost);
+  color: var(--ink-dim);
+  font: 400 12.5px var(--mono);
+  margin: 20px 0;
+}
+
+.notice-bad {
+  border-color: var(--red);
+  color: var(--red);
+  border-style: solid;
+}
+
+.tick {
+  color: var(--green);
+}
+
+.cleared-row {
+  display: grid;
+  grid-template-columns: 1fr var(--col-amount) var(--col-balance);
+  padding: 14px 0 26px;
+  align-items: center;
+}
+
+.cleared-label {
+  font: 400 15px var(--serif);
+  font-style: italic;
+  color: var(--ink-label);
+}

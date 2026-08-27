@@ -1,0 +1,18 @@
+{
+  "answer": {
+    "confidence": 0.6,
+    "evidence_fields": [
+      "narration",
+      "settlement_id",
+      "capture_date"
+    ],
+    "reason": "Narration cites SETL136, but every candidate mixes SETL-133/136/138 rows with capture dates spread over 13, 18 and 20 Feb (plus Jan refunds); none is a clean SETL-136 batch, and candidates_are_exhaustive is false so the true single-batch combination is likely not listed.",
+    "selected": "NONE"
+  },
+  "format": 1,
+  "meta": {
+    "model": "claude-opus-5",
+    "prompt_version": "job_a_select@d3ec30954a34",
+    "ref": "UTR-39450273"
+  }
+}

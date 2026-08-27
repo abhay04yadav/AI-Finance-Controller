@@ -1,0 +1,14 @@
+{
+  "answer": {
+    "classification": "MISSING_IN_LEDGER",
+    "confidence": 0.78,
+    "hypothesis": "Expected gross ₹19,378.01 but the open pool holds only 3 refund rows summing to -₹1,526.97 (nearest RFND-5003 at -₹1,043.53); with zero positive capture rows the shortfall is the full credit, not a fee or FX gap. Consistent with the captures behind SETL141 being absent from the ledger feed rather than mispriced.",
+    "suggested_action": "ESCALATE"
+  },
+  "format": 1,
+  "meta": {
+    "model": "claude-opus-5",
+    "prompt_version": "job_b_classify@3e06bd706fe8",
+    "ref": "UTR-94800140"
+  }
+}

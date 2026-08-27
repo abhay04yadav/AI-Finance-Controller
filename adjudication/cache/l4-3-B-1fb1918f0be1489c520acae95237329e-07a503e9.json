@@ -1,0 +1,14 @@
+{
+  "answer": {
+    "classification": "MISSING_IN_LEDGER",
+    "confidence": 0.8,
+    "hypothesis": "Expected gross of ₹18,500.00 versus an open pool of just ₹4,600.00 (ORD-1123, same value date) — ₹13,900.00 of gross, about 75% of the credit, has no ledger representation at all, so the search could not have succeeded. Consistent with missing capture rows for settlement SETL160 rather than an MDR slab or rounding variance (the ~1.75% fee is already accounted for in the inversion).",
+    "suggested_action": "RAISE_GATEWAY_TICKET"
+  },
+  "format": 1,
+  "meta": {
+    "model": "claude-opus-5",
+    "prompt_version": "job_b_classify@3e06bd706fe8",
+    "ref": "UTR-71968116"
+  }
+}

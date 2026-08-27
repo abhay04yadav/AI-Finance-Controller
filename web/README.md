@@ -1,41 +1,82 @@
-# web/ — Next.js App Router + Tailwind
+# web/ — Next.js App Router
 
-**Not scaffolded until gate 12.** Guide §8.
+Built at gate 12. Guide §8.
 
-Deliberate: `create-next-app` adds tens of thousands of files that would be
-noise through gates 0-11, and the UI has nothing to render until L5 posts
-entries. The directory shape is reserved here so the structure matches §3.2.
+```bash
+make api      # :8000  the run, the books, the actions
+make web      # :3000  the screens
+```
 
-## Screens (§8.4)
+Two processes. `next.config.mjs` proxies `/api/*` to the FastAPI server, so the
+browser sees one origin and no CORS preflight on every button press.
 
-| Route | Role |
+## Which seed the screens show
+
+`AFC_SEED` picks the dataset the API reconciles (default 42). `?seed=N` on any
+route overrides it for that request — the run is built on first ask and kept, so
+`/exceptions?seed=7` reconciles seed 7 once and then serves it.
+
+That is how gate 12 is verified: open the app on 42, open it on 7, and **every
+figure on every screen must change.** Anything that survives is hardcoded.
+
+Three figures legitimately do not move, and each is a property of something
+other than the dataset:
+
+| Unchanged | Why |
 |---|---|
-| `/exceptions` | **HOME.** Sorted by amount desc. Filter by reason code. Header: `8 open · ₹8,400 unreconciled` |
-| `/review` | Confidence 0.70-0.95. Prepared entry + Approve/Reject. 2 seconds per item. |
-| `/books` | Books-closed summary + cash position (§1.6). The "we closed the loop" screen. |
-| `/benchmark` | Live eval run. THE judge screen. |
+| 605 records processed | `scale` fixes how many rows the generator writes; the seed fixes what is in them |
+| 27 planted anomalies | same — one injector run per failure mode per scale |
+| Rounding write-off ₹0.00 | L1 posts from the gateway's *stated* fee, so nothing is left to write off |
 
-## The inversion (§8.1)
+## Dependencies
 
-The exception list is the home screen, not a red box at the bottom of a green
-dashboard. A controller never looks at matched rows — those are done. Building
-for the 88% that needs no attention is building for nobody.
+`next`, `react`, `react-dom`. That is the whole list.
 
-If landing on the home page shows a green "45/50 matched" dashboard, §8.1 was
-not understood.
+**No Tailwind**, deliberately. The design in `docs/AI Finance Controller
+wireframes` is exact hex values and exact pixel sizes; a utility framework can
+only express those as arbitrary values, and `text-[#191713] text-[13.5px]` is
+Tailwind in name only — strictly harder to read than the CSS it compiles to.
+`app/globals.css` holds the tokens, lifted verbatim from the wireframe.
 
-## Non-negotiables
+No charting library either: the two diagrams are hand-written SVG driven by API
+data, which is what §8.5 requires of the trace.
 
-- Every exception card carries WHAT / WHY / ACTION (§8.2).
-- Review cards show the **prepared journal entry**, not just the suggested
-  match. That is what makes it a 2-second decision instead of a 2-minute
-  investigation.
-- Action buttons are generated from `is_available()`, never hardcoded (§8.3).
-- `AWAITING_SETTLEMENT` gets its own visual treatment. It is **not an error** —
-  the money is genuinely in transit (Appendix A).
-- `font-variant-numeric: tabular-nums` on all figures. Misaligned decimals in a
-  finance tool read as amateur immediately (§8.5).
-- The signature element: the **reconciliation trace**, drawn as a connected
-  trail — `ORD-101 → SETL-88 → UTR-77291 → bank credit` (§8.5).
-- Benchmark screen must actually run. Hardcoded or cached numbers are the gate
-  13 stop condition.
+## Screens
+
+| Route | Frame | Role |
+|---|---|---|
+| `/exceptions` | 2a, 3a | **HOME.** Ledger rows, running open balance, trace, actions |
+| `/review` | 2b | Prepared journal entry + Approve/Reject |
+| `/books` | 2c, 3b | Disposition, tie-out, cash position, close |
+| `/benchmark` | 2d | Live eval run |
+
+`/` redirects to `/exceptions`. Not a landing page, not a summary with the
+worklist linked from it — the inversion §8.1 asks for is that the worklist **is**
+the index.
+
+## Non-negotiables, and where each one lives
+
+- **WHAT / WHY / ACTION on every card** — `app/exceptions/page.tsx`. `why` is
+  rendered exactly as the API returns it: no fallback text, no templating. The
+  card labels it a hypothesis only when `why_source` says `model`.
+- **Actions from `available_for()`** — the payload carries them; the frontend
+  has no action list of its own. If the wireframe offers a button the registry
+  does not return for that reason code, the registry wins and the button is not
+  there.
+- **In-transit below a rule, in its own collection** — never in the list, never
+  in the header count, never blocking a close. Its actions all post nothing.
+- **The open balance is a computed running balance** — server-side, in
+  `api/routes/exceptions.py`, descending to `Cleared 0.00`. The API also returns
+  `balance_ties`; if it is ever false the page prints the discrepancy instead of
+  the column.
+- **`tabular-nums` everywhere, Indian grouping everywhere** — set on `:root` and
+  never switched off; `lib/money.ts` formats via `Intl.NumberFormat("en-IN")`,
+  so ₹1,50,918.37 and never ₹150,918.37.
+- **The trace renders from real match data** — `components/Trace.tsx` owns
+  geometry and nothing else. It does not know what a fee is or when T+2 falls;
+  nodes, arithmetic steps and the residual all arrive as data.
+- **Review balance is enforced server-side** — the button disables on an
+  unbalanced entry, but `POST /api/review/{utr}/approve` refuses it in the
+  handler and would refuse a caller who bypassed the page entirely.
+- **Benchmark runs live** — `POST /api/benchmark` every press. The fingerprint is
+  on screen so a judge can run it twice and check §9.1 themselves.

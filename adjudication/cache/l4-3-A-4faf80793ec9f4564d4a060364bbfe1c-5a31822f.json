@@ -1,0 +1,18 @@
+{
+  "answer": {
+    "confidence": 0.5,
+    "evidence_fields": [
+      "narration",
+      "settlement_id",
+      "capture_date"
+    ],
+    "reason": "Narration 'SETTLEMENT 138' points to SETL-138; C is the only candidate whose majority of rows are SETL-138 (ORD-1099, ORD-1285, ORD-1347, all 20-Feb captures) with just two SETL-136 rows, whereas A, B, D and E are SETL-136-weighted.",
+    "selected": "C"
+  },
+  "format": 1,
+  "meta": {
+    "model": "claude-opus-5",
+    "prompt_version": "job_a_select@d3ec30954a34",
+    "ref": "UTR-68496914"
+  }
+}

@@ -128,11 +128,43 @@ BatchVerdictResponse.model_rebuild()
 BatchHypothesisResponse.model_rebuild()
 
 
+#: JSON Schema keywords `output_config.format` does not accept. Sending one is
+#: a 400, not a warning:
+#:
+#:   output_config.format.schema: For 'number' type, properties maximum,
+#:   minimum are not supported
+#:
+#: `confidence` is declared `Field(ge=0.0, le=1.0)` and that constraint stays —
+#: it is still enforced when the response is parsed, and again in
+#: `Verdict.__post_init__`. What changes is only that the range is not part of
+#: the contract sent to the model. Found on the first live call; every run
+#: before that was cached or credential-less, which is exactly the class of bug
+#: an offline fixture cannot catch.
+_UNSUPPORTED = frozenset(
+    {"minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "multipleOf"}
+)
+
+
+def _strip(node: object) -> Any:
+    """Remove keywords the API rejects, everywhere they appear."""
+    if isinstance(node, dict):
+        return {k: _strip(v) for k, v in node.items() if k not in _UNSUPPORTED}
+    if isinstance(node, list):
+        return [_strip(v) for v in node]
+    return node
+
+
 def json_schema(model: type[BaseModel]) -> dict[str, Any]:
     """The schema in the shape `output_config.format` wants.
 
     Pydantic emits `$defs`/`$ref` for nested models, which the API accepts, and
     `extra="forbid"` has already put `additionalProperties: false` on every
     object. Required-ness comes from the fields having no defaults.
+
+    Numeric range constraints are stripped — see `_UNSUPPORTED`. They are not
+    relaxed, only moved: the model is no longer *told* the bound, and the code
+    still refuses an answer that breaks it.
     """
-    return model.model_json_schema()
+    stripped = _strip(model.model_json_schema())
+    assert isinstance(stripped, dict)
+    return stripped

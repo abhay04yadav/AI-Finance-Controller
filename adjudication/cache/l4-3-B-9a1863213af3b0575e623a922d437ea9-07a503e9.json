@@ -1,0 +1,14 @@
+{
+  "answer": {
+    "classification": "MISSING_IN_LEDGER",
+    "confidence": 0.82,
+    "hypothesis": "Expected gross of ₹26,901.00 has no possible cover: the entire open pool is just two February refund rows (RFND-5003 −₹233.03 and RFND-5004 −₹602.00) totalling −₹835.03, so the pool is ~₹27,736 short of the target and no combination could ever reach it. The captures behind settlement SETL157 (credit ₹26,320.11 on 2026-03-19) appear never to have been ingested into the ledger; the stale negative rows are unrelated cross-period refunds.",
+    "suggested_action": "RAISE_GATEWAY_TICKET"
+  },
+  "format": 1,
+  "meta": {
+    "model": "claude-opus-5",
+    "prompt_version": "job_b_classify@3e06bd706fe8",
+    "ref": "UTR-81329184"
+  }
+}

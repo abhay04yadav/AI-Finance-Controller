@@ -333,7 +333,28 @@ def test_the_real_pipeline_now_matches_and_stays_exact(tmp_path: Path) -> None:
     m = evaluate(ds)
     assert m.attempted > 0
     assert m.match_precision == 1.0
+    # NOT `llm_calls == 0`. That held at gate 5 because L4 did not exist; once
+    # it did, and once a verdict for this dataset was in the committed cache,
+    # the honest number here became 1 — a record genuinely reached L4 and got
+    # an answer, without a request being made. Asserting zero would have forced
+    # us to either delete real cached verdicts or pretend the layer was idle.
+    # The standing invariant is the BUDGET (§2.2), so that is what is asserted.
+    assert m.llm_calls / max(m.total, 1) < 0.10
+
+
+def test_the_deterministic_core_needs_no_adjudicator(tmp_path: Path) -> None:
+    """The `--no-llm` claim, asserted rather than assumed (§4.4).
+
+    Separate from the test above because the two say different things: that one
+    is about the pipeline being correct, this one is about it being correct
+    *without* L4. Conflating them is how "works offline" quietly stops being
+    true.
+    """
+    ds = ensure_dataset(tmp_path / "seed42", 42, 200)
+    m = evaluate(ds, no_llm=True)
     assert m.llm_calls == 0
+    assert m.llm_cost_paise == 0
+    assert m.match_precision == 1.0
 
 
 def test_a_perfect_oracle_would_score_one_hundred(tmp_path: Path) -> None:

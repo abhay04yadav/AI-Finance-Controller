@@ -24,6 +24,7 @@ from datetime import date
 
 from core.models import CashPosition, JournalEntry
 from core.reason_codes import ReasonCode, Severity, severity_of
+from core.trace import Trace
 
 
 @dataclass(frozen=True, slots=True)
@@ -142,6 +143,14 @@ class RunResult:
     review_queue: tuple[ReviewItem, ...] = ()
     cash_position: CashPosition | None = None
     duplicate_postings_refused: int = 0
+    #: The §8.5 trail behind each credit, keyed by UTR for a match and by ref
+    #: for an exception. Built once during the run, because reconstructing it
+    #: later would need the residual pool the run has already consumed.
+    traces: dict[str, Trace] = field(default_factory=dict)
+    #: idempotency key -> the journal number the book issued for it. Kept beside
+    #: the entries rather than on them: the number belongs to the book, and the
+    #: same entry posted into two books would carry two numbers.
+    entry_numbers: dict[str, str] = field(default_factory=dict)
     #: Anything L4 wants on the record: budget exhausted, no credential, a
     #: corrupt cache entry, a refusal. Reported rather than swallowed (§5.5),
     #: because "the model was never asked" and "the model said no" are

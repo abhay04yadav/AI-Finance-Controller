@@ -45,6 +45,8 @@ from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from typing import Any
 
+from pydantic import ValidationError
+
 from adjudication import guardrails, prompts
 from adjudication.cache import CacheCorrupt, VerdictCache
 from adjudication.schemas import (
@@ -82,6 +84,10 @@ EFFORT = "low"
 USD_PER_MTOK_IN = 5.00
 USD_PER_MTOK_OUT = 25.00
 PAISE_PER_USD = 8800
+
+#: An answer that parsed as JSON but broke the contract — an out-of-range
+#: confidence, a missing field. Recorded like any other rejection.
+MALFORMED_RESPONSE = "malformed_response"
 
 
 class LlmAdjudicator:
@@ -179,7 +185,16 @@ class LlmAdjudicator:
         )
         for utr, payload in raw.items():
             ambiguity = pending[utr]
-            parsed = VerdictResponse.model_validate(_body(payload))
+            try:
+                parsed = VerdictResponse.model_validate(_body(payload))
+            except ValidationError as exc:
+                # The range bound on `confidence` is no longer in the schema we
+                # send (the API rejects it), so an out-of-range answer is now
+                # reachable. It is a rejection, not a crash: the credit stays an
+                # exception and the reason says why.
+                rejections[utr] = MALFORMED_RESPONSE
+                notes.append(f"{utr}: response did not satisfy the contract: {exc}")
+                continue
             verdict = parsed.to_verdict(
                 prompt_version=version,
                 model=MODEL,
@@ -224,7 +239,12 @@ class LlmAdjudicator:
         )
         for ref, payload in raw.items():
             case = pending[ref]
-            parsed = HypothesisResponse.model_validate(_body(payload))
+            try:
+                parsed = HypothesisResponse.model_validate(_body(payload))
+            except ValidationError as exc:
+                rejections[ref] = MALFORMED_RESPONSE
+                notes.append(f"{ref}: response did not satisfy the contract: {exc}")
+                continue
             hypothesis = parsed.to_hypothesis(
                 prompt_version=version,
                 model=MODEL,

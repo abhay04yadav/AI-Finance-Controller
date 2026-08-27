@@ -638,6 +638,8 @@ make layer-check
 | `make match` | Run the reconciliation pipeline |
 | `make eval` | Score against ground truth and print the report |
 | `make determinism` | Run `make eval` twice and prove the two are byte-identical |
+| `make api` | Serve the four screens' data on :8000 |
+| `make web` | Next.js dev server on :3000 (needs `make api` alongside) |
 | `make demo` | Generate + match + eval at demo scale |
 | `make test` | Run the test suite |
 | `make lint` / `make typecheck` | ruff / mypy |
@@ -723,7 +725,7 @@ robust, and a far better story.
 | 9 | Exceptions + actions | WHAT / WHY / ACTION on every card | ✅ |
 | 10 | **No-LLM checkpoint** | Deterministic core stands alone, zero LLM calls | ✅ |
 | 11 | L4 adjudication | Bounded budget; deterministic; guardrails pass | ✅ |
-| 12 | UI | Exceptions is home; entry preview in review | ⬜ |
+| 12 | UI | Exceptions is home; entry preview in review | ✅ |
 | 13 | Benchmark screen | Runs live; surfaces its own misses | ⬜ |
 | 14 | Final | Clean clone; held-out seed holds | ⬜ |
 
