@@ -198,7 +198,13 @@ def audit_trail_payload(run: Any) -> dict[str, Any]:
         "label": run.label(),
         "seed": run.seed,
         "generated_at": run.trail.now().isoformat(),
-        "events": [e.as_dict() for e in run.trail.events],
+        "events": [
+            {**e.as_dict(), "actor_kind": "user"} for e in run.trail.events
+        ],
+        # Everything a machine decided, on the same actor axis as the human
+        # events above. Without these the trail answers "who decided this" for
+        # the handful of rows a person touched and stays silent about the rest.
+        "decisions": _machine_decisions(run),
         "summary": {
             "resolved_by_hand": hand.resolved,
             "resolved_by_hand_paise": hand.resolved_paise,
@@ -208,6 +214,78 @@ def audit_trail_payload(run: Any) -> dict[str, Any]:
             "rejected_in_review": review.rejected,
         },
     }
+
+
+#: strategy -> the actor label the trail shows it under.
+_ACTOR: dict[str, str] = {
+    "L1_exact": "system:L1",
+    "L3_subset": "system:L3",
+    "L4_adjudicate": "llm",
+}
+
+
+def _machine_decisions(run: Any) -> list[dict[str, Any]]:
+    """Every match the run made, as an audit line.
+
+    `evidence` is the list of fields the matcher actually joined on, which is
+    the "on what evidence" half of the question — a confidence with no
+    evidence behind it is a number, not a justification.
+    """
+    result = run.result
+    at = run.started_at.isoformat()
+    out: list[dict[str, Any]] = []
+
+    if result.fee_rate is not None:
+        settled = sum(1 for m in result.matches.values() if m.strategy == "L1_exact")
+        out.append(
+            {
+                "actor": "system:L2",
+                "actor_kind": "system",
+                "at": at,
+                "subject": run.run_id,
+                "detail": (
+                    f"inferred fee rate {result.fee_rate * 100:.4f}% "
+                    f"from {settled} settlements"
+                ),
+                "evidence": [],
+                "confidence": None,
+            }
+        )
+
+    for utr, match in sorted(result.matches.items()):
+        actor = _ACTOR.get(match.strategy, match.strategy)
+        out.append(
+            {
+                "actor": actor,
+                "actor_kind": "llm" if actor == "llm" else "system",
+                "at": at,
+                "subject": utr,
+                "detail": (
+                    f"matched {utr} -> {len(match.ledger_ids)} order"
+                    f"{'' if len(match.ledger_ids) == 1 else 's'} · "
+                    f"conf {match.confidence:.2f}"
+                ),
+                "evidence": list(match.evidence),
+                "confidence": match.confidence,
+            }
+        )
+
+    # "The model was asked and declined" is a decision, and one the trail has
+    # no other way to show — the credit simply stays an exception.
+    for note in result.adjudication_notes:
+        out.append(
+            {
+                "actor": "llm",
+                "actor_kind": "llm",
+                "at": at,
+                "subject": run.run_id,
+                "detail": note,
+                "evidence": [],
+                "confidence": None,
+            }
+        )
+
+    return out
 
 
 def _find(run: Any, ref: str) -> ExceptionOutcome:

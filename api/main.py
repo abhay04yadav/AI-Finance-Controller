@@ -47,7 +47,14 @@ from api.routes.actions import (
 from api.routes.benchmark import run_benchmark
 from api.routes.books import PeriodNotClearable, books_payload, close_run
 from api.routes.exceptions import exceptions_payload
-from api.routes.review import AlreadyDecided, Unbalanced, approve, reject, review_payload
+from api.routes.review import (
+    AlreadyDecided,
+    Unbalanced,
+    UnknownReasonCode,
+    approve,
+    reject,
+    review_payload,
+)
 from api.runs import DEFAULT_SCALE, DEFAULT_SEED, DatasetMissing, RunStore
 
 # Read `.env` before anything constructs a client. Done here, at the process
@@ -172,7 +179,15 @@ def get_run(
         "records_processed": result.records_processed,
         "matches": len(result.matches),
         "auto_posted": position.entries_posted if position else 0,
-        "pending_review": position.pending_review if position else 0,
+        # Counted the way /review counts it — decided entries drop out. The
+        # position's figure is what the RUN produced and never moves, so a
+        # nav built on it said "review 11" over a page showing 10 the moment
+        # anybody approved anything.
+        "pending_review": sum(
+            1
+            for item in result.review_queue
+            if run.review_decisions.get(item.utr) is None
+        ),
         "fee_rate": result.fee_rate,
         "fee_model_summary": result.fee_model_summary,
         "gst_rate": run.settings.gst_rate,
@@ -181,6 +196,15 @@ def get_run(
         "llm_calls": result.llm_calls,
         "adjudication_notes": list(result.adjudication_notes),
         "closed": run.is_closed,
+        # The nav carries a count per route, so a controller can see there is
+        # work waiting without opening the screen. Counted the same way
+        # /exceptions counts it — rows a human has already acted on drop out —
+        # so the tab and the page can never disagree.
+        "open_exceptions": sum(
+            1
+            for e in result.exceptions
+            if not e.is_in_transit and e.ref not in run.trail.acted_subjects()
+        ),
     }
 
 
@@ -269,12 +293,18 @@ def reject_review(
     utr: str,
     run_id: str = Query(default="current"),
     seed: int | None = Query(default=None),
+    reason_code: str = Query(default=""),
+    note: str = Query(default=""),
 ) -> dict[str, Any]:
     run = _resolve(run_id, seed)
     try:
-        return reject(run, utr, DEFAULT_ACTOR)
+        return reject(run, utr, DEFAULT_ACTOR, reason_code=reason_code, note=note)
     except KeyError as exc:
         raise HTTPException(404, f"{utr} is not in the review queue") from exc
+    except UnknownReasonCode as exc:
+        # 422, not 400: the request was well-formed and the code was simply not
+        # one the system defines. The reviewer needs to see the list.
+        raise HTTPException(422, str(exc)) from exc
     except AlreadyDecided as exc:
         raise HTTPException(409, str(exc)) from exc
 
