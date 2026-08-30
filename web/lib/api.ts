@@ -170,6 +170,8 @@ export interface ExceptionsPayload {
   ai_mode: {
     deterministic: { layer: string; detail: string }[];
     llm_calls: number;
+    /** Of those, how many reached the API rather than the committed cache. */
+    llm_api_requests: number;
     llm_cost_paise: Money;
     llm_share: number;
     adjudicated: number;

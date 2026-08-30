@@ -15,6 +15,7 @@ on this Windows box (MinGW's `mingw32-make` works, and so does this).
 from __future__ import annotations
 
 import argparse
+import pathlib
 import subprocess
 import sys
 from pathlib import Path
@@ -66,6 +67,24 @@ def run(*cmd: str, cwd: str | None = None) -> int:
     if shell:
         return subprocess.call(" ".join(cmd), cwd=cwd, shell=True)
     return subprocess.call(list(cmd), cwd=cwd)
+
+
+def _bash() -> str:
+    """A bash that can actually run a script.
+
+    On Windows `bash` on PATH is usually the WSL launcher, and if no distro is
+    installed it fails with `execvpe(/bin/bash)` — which reads as "your script
+    is broken" rather than "you have no WSL". Git for Windows ships a real one
+    and is already a prerequisite for cloning this repo.
+    """
+    if sys.platform == "win32":
+        for candidate in (
+            "C:/Program Files/Git/bin/bash.exe",
+            "C:/Program Files (x86)/Git/bin/bash.exe",
+        ):
+            if pathlib.Path(candidate).exists():
+                return candidate
+    return "bash"
 
 
 def make_venv() -> int:
@@ -128,9 +147,9 @@ def main() -> int:
     if t == "typecheck":
         return run(PY, "-m", "mypy", "core/", "matching/", "ingest/", "posting/")
     if t == "layer-check":
-        return run("bash", "scripts/check_layering.sh")
+        return run(_bash(), "scripts/check_layering.sh")
     if t == "drift-check":
-        return run("bash", "scripts/drift_check.sh")
+        return run(_bash(), "scripts/drift_check.sh")
     if t == "tree":
         return run(PY, "scripts/tree.py", ".", "2")
 

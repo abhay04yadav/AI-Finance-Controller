@@ -190,6 +190,7 @@ def score(
         auto_posted=auto_posted,
         auto_resolution=auto_posted / total if total else 0.0,
         llm_calls=result.llm_calls,
+        llm_api_requests=result.llm_api_requests,
         llm_cost_paise=result.llm_cost_paise,
         cost_per_100_paise=(result.llm_cost_paise / total * 100) if total else 0.0,
         resolvable_planted=len(resolvable_refs),

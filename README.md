@@ -889,6 +889,13 @@ Stated deliberately. A known limitation is a design boundary; an unstated one is
   rather than hidden inside a tolerance.
 - **The LLM is a selector, never a calculator.** It cannot rescue a case the deterministic
   layers failed to generate candidates for; it can only classify and hypothesise about it.
+- **The reported runs replay cached verdicts, not live ones.** L4's answers for the
+  committed seeds ship in `adjudication/cache/`, content-addressed by prompt version and
+  payload hash, which is what lets a judge with no credential reproduce
+  `c1ae52496e22` exactly. The report says which: *"LLM calls: 3, all from cache"*. A seed
+  that was never generated misses the cache and calls for real — that is the check to run
+  if you want to see the model work, and it is why the cache cannot stand in for the
+  system. `python tasks.py generate --seed <any number>` then `eval` it.
 
 **Operational**
 

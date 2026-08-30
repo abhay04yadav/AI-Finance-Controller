@@ -138,6 +138,11 @@ class RunResult:
     exceptions: tuple[ExceptionOutcome, ...] = ()
     records_processed: int = 0
     llm_calls: int = 0
+    #: Of those, how many actually reached the API. The rest were served from
+    #: the committed verdict cache — which is why a clone with no credential
+    #: still reports calls, and why quoting `llm_calls` alone overstates what
+    #: the model did.
+    llm_api_requests: int = 0
     llm_cost_paise: int = 0
     #: Per-layer wall time, for the --profile answer to "which layer is slow?" (§9.6)
     layer_timings_ms: dict[str, float] = field(default_factory=dict)

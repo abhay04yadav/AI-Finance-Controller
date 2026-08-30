@@ -569,6 +569,10 @@ def _ai_mode(run: Any, result: Any) -> dict[str, Any]:
     return {
         "deterministic": deterministic,
         "llm_calls": result.llm_calls,
+        # Of those, how many reached the API. The rest came from the committed
+        # verdict cache — the panel's claim is about how little the model did,
+        # and "3 calls" reads as three requests when it may have been none.
+        "llm_api_requests": result.llm_api_requests,
         "llm_cost_paise": result.llm_cost_paise,
         "llm_share": result.llm_calls / total,
         "adjudicated": len(by_strategy.get("L4_adjudicate", [])),

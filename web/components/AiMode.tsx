@@ -86,11 +86,15 @@ export function AiMode({ onClose }: { onClose: () => void }) {
                 className="prose-sm"
                 style={{ marginTop: 8, fontFamily: "var(--mono)", lineHeight: 1.7 }}
               >
-                {ai.llm_calls} call{ai.llm_calls === 1 ? "" : "s"} across{" "}
-                {data.scale} records · {pct(ai.llm_share, 1)}
+                {ai.llm_calls} case{ai.llm_calls === 1 ? "" : "s"} adjudicated
+                across {data.scale} records · {pct(ai.llm_share, 1)}
                 <br />
-                {rupees(ai.llm_cost_paise)} spent · cached, so a re-run costs
-                nothing
+                {ai.llm_api_requests === 0
+                  ? "0 reached the API — every verdict came from the committed cache"
+                  : `${ai.llm_api_requests} reached the API, ${ai.llm_calls - ai.llm_api_requests} from cache`}
+                <br />
+                {rupees(ai.llm_cost_paise)} spent · a re-run of the same seed
+                costs nothing
                 <br />
                 {ai.adjudicated} match
                 {ai.adjudicated === 1 ? "" : "es"} accepted from the model

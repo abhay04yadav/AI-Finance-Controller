@@ -216,6 +216,26 @@ def test_fingerprint_excludes_timing() -> None:
     assert "throughput" not in metrics().deterministic_fields()
 
 
+def test_fingerprint_ignores_whether_a_verdict_came_from_cache_or_the_api() -> None:
+    """Two runs that DECIDED the same thing must hash the same.
+
+    `llm_api_requests` says how the answer was obtained, not what it was.
+    Hashing it means a judge holding a key and no cache fingerprints
+    differently from one using the committed cache — while both agree on every
+    match, every entry and every amount in the report. That would make the
+    reproducibility claim depend on the reader's environment, which is the
+    opposite of what it is for.
+    """
+    cached = metrics(llm_calls=3, llm_api_requests=0)
+    live = metrics(llm_calls=3, llm_api_requests=3)
+
+    assert cached.fingerprint == live.fingerprint
+    assert "llm_api_requests" not in cached.deterministic_fields()
+
+    # ...but a real difference in what was decided still moves it.
+    assert metrics(llm_calls=3).fingerprint != metrics(llm_calls=4).fingerprint
+
+
 def test_to_dict_is_json_serialisable() -> None:
     import json
 

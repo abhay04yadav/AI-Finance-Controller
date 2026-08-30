@@ -117,6 +117,10 @@ class Metrics:
     # -- calibration ------------------------------------------------------
     calibration: tuple[Bucket, ...]
     by_strategy: tuple[StrategyStats, ...] = ()
+    #: How many of `llm_calls` reached the API rather than the committed
+    #: verdict cache. Quoting calls alone overstates what the model did — a
+    #: clone with no credential still answers three cases, from cache.
+    llm_api_requests: int = 0
     #: What L2 learned, and what the answer key actually planted (§4.2).
     inferred_fee_rate: float | None = None
     planted_fee_rate: float | None = None
@@ -159,12 +163,21 @@ class Metrics:
     #: Fields derived from wall time. They vary run to run by nature, so they
     #: are excluded from the reproducibility fingerprint rather than pretended
     #: to be stable.
+    #: Wall-clock, and therefore a measurement of the machine.
     TIMING_FIELDS = ("elapsed_s", "throughput", "layer_timings_ms")
 
+    #: How the answer was OBTAINED, not what was decided. Whether a verdict
+    #: came off the committed cache or off the API depends on whether the
+    #: cache file is present and whether a credential is — neither of which
+    #: changes a single match, entry or amount. Hashing it would mean a judge
+    #: with a key and no cache fingerprints differently from one with the
+    #: cache, while both agree on every figure in the report. That is the
+    #: opposite of what §9.1 asks the fingerprint to prove.
+    PROVENANCE_FIELDS = ("llm_api_requests",)
+
     def deterministic_fields(self) -> dict[str, Any]:
-        return {
-            k: v for k, v in asdict(self).items() if k not in self.TIMING_FIELDS
-        }
+        skip = (*self.TIMING_FIELDS, *self.PROVENANCE_FIELDS)
+        return {k: v for k, v in asdict(self).items() if k not in skip}
 
     @property
     def fingerprint(self) -> str:
@@ -219,13 +232,24 @@ def render(m: Metrics, *, show_timing: bool = True) -> str:
             f"({s.correct}/{s.attempted})   coverage {pct(coverage)}"
         )
 
+    # "3 calls" and "3 requests" are different claims and the second is the
+    # one a reader assumes. Say which.
+    served = m.llm_calls - m.llm_api_requests
+    if m.llm_calls == 0:
+        detail = "LLM calls: 0"
+    elif m.llm_api_requests == 0:
+        detail = f"LLM calls: {m.llm_calls}, all from cache"
+    elif served:
+        detail = f"LLM calls: {m.llm_calls} ({m.llm_api_requests} live, {served} cached)"
+    else:
+        detail = f"LLM calls: {m.llm_calls} live"
+
     if show_timing:
         out.append(
-            f"Throughput            {m.throughput:>7.1f} rec/sec   "
-            f"(LLM calls: {m.llm_calls})"
+            f"Throughput            {m.throughput:>7.1f} rec/sec   ({detail})"
         )
     else:
-        out.append(f"LLM calls             {m.llm_calls:>7}")
+        out.append(f"LLM calls             {detail.split(': ', 1)[1]:>7}")
     out.append(
         f"Cost per 100 records  {money_str(round(m.cost_per_100_paise)):>9}"
     )

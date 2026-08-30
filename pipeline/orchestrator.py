@@ -195,6 +195,7 @@ class ReconciliationPipeline:
             # Records that REACHED L4, cached or not — the numerator in §2.2's
             # under-10% budget. Cost counts only requests actually made.
             llm_calls=adjudication.calls,
+            llm_api_requests=adjudication.api_requests,
             llm_cost_paise=adjudication.cost_paise,
             adjudication_notes=adjudication.notes,
             layer_timings_ms=timings,
