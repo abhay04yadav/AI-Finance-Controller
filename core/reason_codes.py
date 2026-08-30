@@ -177,3 +177,90 @@ def precedence_of(code: ReasonCode) -> int:
 def most_explanatory(codes: "Iterable[ReasonCode]") -> ReasonCode:
     """Of several codes raised against one reference, the one to show."""
     return min(codes, key=precedence_of)
+
+
+#: One sentence per code, in the words a controller would use. Guide §8.2.
+#:
+#: The reason code is a category, not an explanation: MISSING_IN_LEDGER tells a
+#: developer exactly what fired and tells the person who has to fix it almost
+#: nothing. Design 4a puts a plain sentence on every row for that reason.
+#:
+#: These live HERE and not in a lookup table in a React component, for the same
+#: reason `available_for()` does: adding a reason code should bring its own
+#: sentence with it, and a screen should never be able to describe a code the
+#: registry does not have. The frontend renders whatever the API returns.
+_PLAIN_ENGLISH: dict[ReasonCode, str] = {
+    ReasonCode.AWAITING_SETTLEMENT: (
+        "The customer has paid; the money is still on its way to the bank."
+    ),
+    ReasonCode.LATE_AUTHORIZATION: (
+        "The card was charged days after the customer agreed to pay."
+    ),
+    ReasonCode.AUTO_REFUNDED: (
+        "The sale was authorised but never captured, so the money went back."
+    ),
+    ReasonCode.CROSS_PERIOD_REFUND: (
+        "A refund for a sale in a month whose books are already closed."
+    ),
+    ReasonCode.HOLIDAY_SHIFT: (
+        "A bank holiday pushed the payment past the day we expected it."
+    ),
+    ReasonCode.DUPLICATE_UTR: (
+        "The bank listed the same payment twice, so the books count it twice."
+    ),
+    ReasonCode.MISSING_IN_LEDGER: (
+        "Money arrived for a sale we have no record of making."
+    ),
+    ReasonCode.ROUNDING_DRIFT: (
+        "Sub-paisa differences, each harmless, that add up to a real gap."
+    ),
+    ReasonCode.AMOUNT_MISMATCH: (
+        "Money arrived, but no combination of orders adds up to it."
+    ),
+    ReasonCode.FX_OR_SLAB_VARIANCE: (
+        "The gateway kept a larger share of this sale than our model expects."
+    ),
+    ReasonCode.AMBIGUOUS_UNADJUDICATED: (
+        "Several different sets of orders explain this payment equally well."
+    ),
+    ReasonCode.ADJUDICATION_REJECTED: (
+        "An adjudicator answered and the answer failed its checks, so it was "
+        "discarded."
+    ),
+    ReasonCode.INGEST_ERROR: (
+        "A row in the source file could not be read."
+    ),
+}
+
+
+#: The four-to-six word label a row leads with, in a controller's words.
+#:
+#: Distinct from `_PLAIN_ENGLISH`, and both are on the row: the title is what
+#: the eye lands on scanning forty rows, the sentence is what it reads once it
+#: has stopped. A title long enough to be a sentence would collapse the two
+#: back into one and the scan would be gone.
+_TITLE: dict[ReasonCode, str] = {
+    ReasonCode.AWAITING_SETTLEMENT: "On its way to the bank",
+    ReasonCode.LATE_AUTHORIZATION: "Charged days after the sale",
+    ReasonCode.AUTO_REFUNDED: "Refunded before we could match it",
+    ReasonCode.CROSS_PERIOD_REFUND: "Refund against a closed period",
+    ReasonCode.HOLIDAY_SHIFT: "A bank holiday moved the date",
+    ReasonCode.DUPLICATE_UTR: "The bank listed one payment twice",
+    ReasonCode.MISSING_IN_LEDGER: "Money with no matching sale",
+    ReasonCode.ROUNDING_DRIFT: "Sub-paisa drift, added up",
+    ReasonCode.AMOUNT_MISMATCH: "Nothing adds up to this credit",
+    ReasonCode.FX_OR_SLAB_VARIANCE: "The gateway kept more than we model",
+    ReasonCode.AMBIGUOUS_UNADJUDICATED: "Several answers fit equally well",
+    ReasonCode.ADJUDICATION_REJECTED: "The adjudicator's answer failed its checks",
+    ReasonCode.INGEST_ERROR: "A source row could not be read",
+}
+
+
+def title_of(code: ReasonCode) -> str:
+    """The short label a row leads with."""
+    return _TITLE.get(code, "Could not be reconciled")
+
+
+def plain_english_of(code: ReasonCode) -> str:
+    """The row's one-line explanation, for someone who is not a developer."""
+    return _PLAIN_ENGLISH.get(code, "This payment could not be reconciled.")

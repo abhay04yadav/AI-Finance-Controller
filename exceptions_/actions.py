@@ -103,6 +103,16 @@ class _BaseAction:
     posts_entry = False
     #: Reason codes this action makes sense for.
     applies_to: frozenset[ReasonCode] = frozenset()
+    #: The entry this action writes, as (side, account, which-amount) triples,
+    #: for the preview under the button. `amount` is the exception's own
+    #: amount and `residual` the part that does not reconcile; anything else
+    #: is a literal already in rupees.
+    #:
+    #: Declared here rather than derived from `execute()` because a preview
+    #: that re-derives the posting is a second opinion about it, and the two
+    #: drift the first time an entry changes. When this tuple and execute()
+    #: disagree the test suite says so.
+    posting_shape: tuple[tuple[str, str, str], ...] = ()
 
     def is_available(self, exc: ExceptionOutcome) -> bool:
         return exc.reason_code in self.applies_to
@@ -113,6 +123,7 @@ class _BaseAction:
             label=self.label,
             description=self.description,
             posts_entry=self.posts_entry,
+            posting_shape=self.posting_shape,
         )
 
     def _note_only(
@@ -171,6 +182,7 @@ class PostToSuspense(_BaseAction):
         "the books matches the statement while the cause is investigated."
     )
     posts_entry = True
+    posting_shape = (("Dr", "Bank", "amount"), ("Cr", "Suspense", "amount"))
     applies_to = frozenset(
         {
             ReasonCode.MISSING_IN_LEDGER,
@@ -234,6 +246,7 @@ class AcceptWithWriteOff(_BaseAction):
         "write-off account and treats the match as settled."
     )
     posts_entry = True
+    posting_shape = (("Dr", "Rounding write-off", "amount"), ("Cr", "Suspense", "amount"))
     applies_to = frozenset(
         {ReasonCode.ROUNDING_DRIFT, ReasonCode.FX_OR_SLAB_VARIANCE}
     )
@@ -298,6 +311,7 @@ class CreateLedgerEntry(_BaseAction):
         "so unrecorded revenue stops being an audit finding."
     )
     posts_entry = True
+    posting_shape = (("Dr", "Bank", "amount"), ("Cr", "Accounts receivable", "amount"))
     applies_to = frozenset(
         {ReasonCode.MISSING_IN_LEDGER, ReasonCode.LATE_AUTHORIZATION}
     )

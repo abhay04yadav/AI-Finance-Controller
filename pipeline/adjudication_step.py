@@ -194,6 +194,7 @@ def apply_hypotheses(
                     f"confidence): {hypothesis.hypothesis}"
                 ).strip(),
                 actions=_action_first(exc.actions, hypothesis.suggested_action),
+                confidence=hypothesis.confidence,
             )
         )
     return tuple(out)

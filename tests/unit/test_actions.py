@@ -389,3 +389,47 @@ def test_actions_never_import_persistence_or_the_api() -> None:
         if isinstance(node, ast.ImportFrom) and node.module:
             imported.add(node.module.split(".")[0])
     assert not imported & {"persistence", "api", "pipeline", "matching", "eval"}
+
+
+def test_posting_shape_matches_what_execute_actually_writes() -> None:
+    """The preview under a button and the entry behind it are one fact.
+
+    `posting_shape` is declared on the action so the UI can print "posts Dr
+    Bank 24,860.00 · Cr Suspense 24,860.00" without re-deriving the entry. A
+    declaration is only worth having if it is checked: without this the shape
+    and `execute()` drift the first time an entry changes, and the screen
+    confidently describes a posting the books never made.
+    """
+    exc = ExceptionOutcome(
+        ref="UTR-SHAPE",
+        reason_code=ReasonCode.MISSING_IN_LEDGER,
+        amount_paise=100_000,
+        value_date=date(2026, 3, 2),
+    )
+
+    checked = 0
+    for action in REGISTRY:
+        if not action.posts_entry:
+            assert action.posting_shape == (), (
+                f"{action.code} posts nothing but declares a posting shape"
+            )
+            continue
+        if not action.is_available(exc):
+            continue
+
+        sink = FakeSink()
+        outcome = action.execute(exc, actor="test", sink=sink)
+        if outcome.is_err():
+            continue
+        assert sink.entries, f"{action.code} claims posts_entry but wrote nothing"
+
+        actual = tuple(
+            ("Dr" if line.debit_paise else "Cr") for line in sink.entries[-1].lines
+        )
+        declared = tuple(side for side, _account, _which in action.posting_shape)
+        assert declared == actual, (
+            f"{action.code}: shape declares {declared}, execute() wrote {actual}"
+        )
+        checked += 1
+
+    assert checked >= 1, "no posting action was exercised — the check is vacuous"

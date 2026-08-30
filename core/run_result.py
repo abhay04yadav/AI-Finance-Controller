@@ -88,6 +88,10 @@ class ActionOffer:
     description: str = ""
     #: Whether performing it writes to the books.
     posts_entry: bool = False
+    #: (side, account, which-amount) per line of the entry this would write,
+    #: so a button can say what it posts before anybody presses it. Empty for
+    #: an action that touches no books.
+    posting_shape: tuple[tuple[str, str, str], ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -107,6 +111,10 @@ class ExceptionOutcome:
     #: What the controller can do about it. Empty is a bug: every reason code
     #: must offer at least one action, or the card is a report, not a worklist.
     actions: tuple[ActionOffer, ...] = ()
+    #: The adjudicator's confidence in its hypothesis, when L4 supplied one.
+    #: None means the model was never asked or declined — which is a different
+    #: fact from "asked and unsure", so it must not collapse to 0.0.
+    confidence: float | None = None
 
     @property
     def severity(self) -> Severity:
