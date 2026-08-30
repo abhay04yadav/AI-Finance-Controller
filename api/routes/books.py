@@ -23,11 +23,54 @@ from __future__ import annotations
 from typing import Any
 
 from core.money import Money
+from posting.cash_position import compute_cash_position
+
+
+def current_position(run: Any) -> Any:
+    """The cash position as the ledger stands NOW.
+
+    `result.cash_position` is where the pipeline left things, before anybody
+    approved or acted on anything. Approving a queued entry posts a real
+    journal entry into the repository, so a books screen reading the snapshot
+    reports a state that stopped being true the moment a controller did their
+    job — revenue, suspense and the rounding write-off all frozen while the
+    audit trail moved on without them.
+
+    Recomputed from the repository, which holds every entry the run posted and
+    every entry a person has posted since. The pending/exception counts come
+    from the same decision state the other two screens are filtered by, so all
+    three screens answer with one number.
+    """
+    snapshot = run.result.cash_position
+    if snapshot is None:  # pragma: no cover - a run always posts
+        return None
+
+    review_open = [
+        i
+        for i in run.result.review_queue
+        if run.review_decisions.get(i.utr) is None
+    ]
+    acted = run.trail.acted_subjects()
+    exceptions_open = [
+        e
+        for e in run.result.exceptions
+        if not e.is_in_transit and e.ref not in acted
+    ]
+    return compute_cash_position(
+        run.repository.all(),
+        in_transit=snapshot.in_transit,
+        pending_review=len(review_open),
+        pending_review_paise=sum(
+            i.prepared_entry.amount_for("1000 Bank Account") for i in review_open
+        ),
+        exceptions=len(exceptions_open),
+        exceptions_paise=sum(e.amount_paise or 0 for e in exceptions_open),
+    )
 
 
 def books_payload(run: Any) -> dict[str, Any]:
     result = run.result
-    position = result.cash_position
+    position = current_position(run)
     if position is None:  # pragma: no cover - a run always posts
         return {"run_id": run.run_id, "posted": False}
 
@@ -144,7 +187,7 @@ def close_run(run: Any, actor: str) -> dict[str, Any]:
     """
     from pipeline.audit import EventType
 
-    position = run.result.cash_position
+    position = current_position(run)
     open_count = _still_open(run)
     if open_count:
         raise PeriodNotClearable(
