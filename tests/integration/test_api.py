@@ -11,6 +11,7 @@ hardcoded.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
@@ -360,3 +361,216 @@ def test_the_fee_model_is_inferred_separately_on_each_seed(
     b = client.get(f"/api/runs/current?seed={SEED_B}").json()
     assert a["fee_rate"] != b["fee_rate"], "the rate was not inferred per run"
     assert abs(a["fee_rate"] - b["fee_rate"]) < 1e-5, "and yet they should agree"
+
+
+def test_a_rejection_carries_the_reviewer_s_reason_code(client: TestClient) -> None:
+    """A rejected entry reappears on /exceptions, and it should arrive saying
+    WHY a person declined it.
+
+    Without the code the row lands back on the worklist carrying only "a human
+    said no", which throws away the most useful thing the human knew and makes
+    the exception list unfilterable by the codes it is filtered by everywhere
+    else.
+    """
+    queue = client.get(f"/api/runs/current/review?seed={SEED_B}").json()
+    if not queue["items"]:
+        pytest.skip("seed has an empty review queue")
+    utr = queue["items"][0]["utr"]
+
+    r = client.post(
+        f"/api/review/{utr}/reject?seed={SEED_B}&reason_code=DUPLICATE_UTR"
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["reason_code"] == "DUPLICATE_UTR"
+
+    trail = client.get(f"/api/runs/current/audit-trail?seed={SEED_B}").json()
+    rejected = [e for e in trail["events"] if e["subject"] == utr]
+    assert rejected, "the rejection was not recorded in the audit trail"
+    assert "DUPLICATE_UTR" in rejected[-1]["detail"]
+
+
+def test_a_rejection_may_not_invent_a_reason_code(client: TestClient) -> None:
+    """An exception list filtered by codes reviewers made up is not filterable.
+
+    422 rather than 400: the request was well-formed, the code simply is not
+    one the system defines, and the reviewer needs to be shown the list.
+    """
+    queue = client.get(f"/api/runs/current/review?seed={SEED_A}").json()
+    if not queue["items"]:
+        pytest.skip("seed has an empty review queue")
+    utr = queue["items"][0]["utr"]
+
+    r = client.post(
+        f"/api/review/{utr}/reject?seed={SEED_A}&reason_code=LOOKS_WRONG_TO_ME"
+    )
+    assert r.status_code == 422, r.text
+    assert "LOOKS_WRONG_TO_ME" in r.text
+
+    # And the entry is still undecided — a refused rejection must not half-apply.
+    after = client.get(f"/api/runs/current/review?seed={SEED_A}").json()
+    assert any(i["utr"] == utr for i in after["items"])
+
+
+def test_the_nav_counts_agree_with_the_screens_they_point_at(
+    client: TestClient,
+) -> None:
+    """A tab that says 11 over a page showing 10 is worse than a tab with no
+    number on it.
+
+    Both counts move when a decision is made: the run's own `pending_review`
+    is what the PIPELINE produced and never changes, so a nav built on it goes
+    stale the moment anybody approves anything.
+    """
+    before = client.get(f"/api/runs/current?seed={SEED_A}").json()
+    queue = client.get(f"/api/runs/current/review?seed={SEED_A}").json()
+    assert before["pending_review"] == queue["count"], (
+        "the nav and /review disagree before anything was decided"
+    )
+
+    exc = client.get(f"/api/runs/current/exceptions?seed={SEED_A}").json()
+    assert before["open_exceptions"] == exc["open"], (
+        "the nav and /exceptions disagree before anything was acted on"
+    )
+
+    if not queue["items"]:
+        pytest.skip("seed has an empty review queue")
+    utr = queue["items"][0]["utr"]
+    assert client.post(f"/api/review/{utr}/approve?seed={SEED_A}").status_code == 200
+
+    after = client.get(f"/api/runs/current?seed={SEED_A}").json()
+    after_queue = client.get(f"/api/runs/current/review?seed={SEED_A}").json()
+    assert after["pending_review"] == after_queue["count"] == queue["count"] - 1
+
+
+@pytest.mark.parametrize("seed", [SEED_A, SEED_B])
+def test_calibration_accounts_for_every_record(client: TestClient, seed: int) -> None:
+    """The table is captioned "every record grouped by how sure the system was",
+    so it has to hold every record.
+
+    The buckets are keyed on a confidence, and a credit the system DECLINED to
+    answer has none — so it fell through all of them. The bars summed to 59 of
+    60 and the one record this page exists to be honest about was the one it
+    quietly dropped.
+    """
+    m = client.post(f"/api/benchmark?seed={seed}").json()
+    held = sum(b["records"] for b in m["calibration"])
+    assert held == m["total"], (
+        f"calibration holds {held} of {m['total']} records — "
+        f"{m['total'] - held} vanished"
+    )
+
+    declined = [b for b in m["calibration"] if b["declined"]]
+    assert len(declined) == 1, "there should be exactly one declined row"
+    assert declined[0]["records"] == m["total"] - m["attempted"]
+    # Declining is not an answer, so it cannot be scored right or wrong.
+    assert declined[0]["correct"] == 0
+
+    scored = [b for b in m["calibration"] if not b["declined"]]
+    assert sum(b["records"] for b in scored) == m["attempted"]
+
+
+def test_books_report_the_ledger_now_not_the_pipeline_snapshot(
+    client: TestClient,
+) -> None:
+    """Approving an entry posts a real journal entry. /books has to see it.
+
+    `result.cash_position` is where the PIPELINE left things, before anybody
+    touched anything. Reading it meant the screen whose headline is "every
+    rupee that moved is on one of three lines, and the three lines add up"
+    kept reporting a state that stopped being true the moment a controller did
+    their job: the audit trail's "approved in review" ticked up while revenue,
+    suspense and the rounding write-off stayed frozen.
+    """
+    seed = SEED_B
+
+    def books() -> dict:
+        return client.get(f"/api/runs/current/books?seed={seed}").json()
+
+    def rounding(b: dict) -> int:
+        return next(a["paise"] for a in b["tie_out"]["addends"] if "ound" in a["label"])
+
+    queue = client.get(f"/api/runs/current/review?seed={seed}").json()
+    carrying = [
+        i
+        for i in queue["items"]
+        if any(
+            "Rounding" in ln["account"] and ln["debit_paise"]
+            for ln in i["prepared_entry"]["lines"]
+        )
+    ]
+    if not carrying:
+        pytest.skip("no queued entry carries a rounding line on this seed")
+    item = carrying[0]
+    drift = next(
+        ln["debit_paise"]
+        for ln in item["prepared_entry"]["lines"]
+        if "Rounding" in ln["account"]
+    )
+
+    before = books()
+    r = client.post(f"/api/review/{item['utr']}/approve?seed={seed}")
+    assert r.status_code == 200, r.text
+    assert r.json()["posted"] is True
+    after = books()
+
+    # The money left the queue and left suspense, by exactly its bank amount.
+    bank = item["amount_paise"]
+    assert (
+        before["disposition"]["pending_review"]["paise"]
+        - after["disposition"]["pending_review"]["paise"]
+        == bank
+    )
+    assert before["suspense"]["paise"] - after["suspense"]["paise"] == bank
+
+    # The entry's own rounding line reached the books.
+    assert rounding(after) - rounding(before) == drift
+
+    # Revenue rose by what the entry credited to receivables.
+    ar = next(
+        ln["credit_paise"]
+        for ln in item["prepared_entry"]["lines"]
+        if "Receivable" in ln["account"]
+    )
+    assert (
+        after["tie_out"]["total"]["paise"] - before["tie_out"]["total"]["paise"] == ar
+    )
+
+    # And after all that the tie-out still holds.
+    assert after["tie_out"]["ties"], "the books stopped tying after an approval"
+    assert (
+        sum(a["paise"] for a in after["tie_out"]["addends"])
+        == after["tie_out"]["total"]["paise"]
+    )
+
+
+@pytest.mark.parametrize("seed", [SEED_A, SEED_B])
+def test_benchmark_reports_the_thresholds_its_bands_are_labelled_from(
+    client: TestClient, seed: int
+) -> None:
+    """The calibration chart labels each band with where that confidence would
+    be ROUTED, so it has to be told the policy.
+
+    It was not: the payload carried no thresholds at all, so the frontend
+    hardcoded 0.95 and 0.85 and labelled the 0.70-0.85 band "exception" —
+    while the run's review floor is 0.70, meaning anything in that band goes
+    to a person. Change the policy and the labels have to follow it.
+    """
+    from core.config import Settings
+
+    m = client.post(f"/api/benchmark?seed={seed}").json()
+    settings = Settings()
+    assert m["auto_post_threshold"] == settings.auto_post_threshold
+    assert m["review_threshold"] == settings.review_threshold
+
+    # Band edges and routing thresholds are different things, and only two of
+    # the four coincide. Both policy edges must be band edges, or a band would
+    # straddle a routing boundary and no single label could be right.
+    # "0.95 - 1.00" and "below 0.70" — take every number in every label.
+    edges = {
+        float(tok)
+        for b in m["calibration"]
+        if not b["declined"]
+        for tok in re.findall(r"\d+\.\d+", b["label"])
+    }
+    assert settings.auto_post_threshold in edges
+    assert settings.review_threshold in edges
