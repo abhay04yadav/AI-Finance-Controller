@@ -1,0 +1,19 @@
+# Everything the image does not need. Keeps the build small and stops a local
+# .env from being baked into a published image.
+.git
+.venv
+.env
+web/node_modules
+web/.next
+design
+docs
+eval/runs
+data/seed1
+data/seed2
+data/seed3
+data/seed4
+data/seed5
+data/seed99
+data/seed42-5000
+**/__pycache__
+*.pyc

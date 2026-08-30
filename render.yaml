@@ -1,0 +1,22 @@
+# Render blueprint for the API.
+#
+# A web service, not a cron or a function: the run holds its journal
+# repository, review decisions and audit trail in memory, so the process has
+# to outlive the request. See the note at the top of the Dockerfile.
+services:
+  - type: web
+    name: afc-api
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+    healthCheckPath: /api/health
+    envVars:
+      # All business dates are Asia/Kolkata, never UTC (§2.7 rule 6). Set here
+      # as well as in the image so it survives a base-image change.
+      - key: TZ
+        value: Asia/Kolkata
+      # Gate 11 only. Leave unset and the run reports "no credential" on its
+      # adjudication notes and leaves those cases on the exception list —
+      # --no-llm is a supported mode, not a degraded one (§4.4).
+      - key: ANTHROPIC_API_KEY
+        sync: false

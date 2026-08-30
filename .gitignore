@@ -21,8 +21,15 @@ broke_fixed.txt
 # history; this line is what stops them coming back on the next `git add -A`.
 docs/
 
-# Generated datasets. Reproducible from a seed, so never committed (??2.7 rule 2).
+# Generated datasets. Reproducible from a seed, so never committed (§2.7 rule 2)
+# — except the two the hosted demo serves, which must exist in the image
+# because a container cannot run `make generate` on boot. 72 KB each, and
+# still reproducible: `make generate SEED=42` rewrites them byte for byte.
 data/
+!data/seed42/
+!data/seed42/**
+!data/seed7/
+!data/seed7/**
 build/
 
 # Eval run snapshots (keep the directory, ignore the dumps)
