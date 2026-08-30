@@ -53,3 +53,10 @@ web/CLAUDE.md
 
 # design source, like docs/
 design/
+
+# Next.js dev writes these on every run
+web/AGENTS.md
+web/CLAUDE.md
+
+# design source, like docs/
+design/
