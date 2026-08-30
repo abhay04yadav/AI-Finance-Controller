@@ -236,7 +236,10 @@ def main(argv: list[str] | None = None) -> int:
     configure_stdout()
 
     if not args.dataset.exists():
-        print(f"no dataset at {args.dataset} — run `make generate` first")
+        print(
+            f"no dataset at {args.dataset} — run "
+            f"`python tasks.py generate` first"
+        )
         return 2
 
     if args.profile:

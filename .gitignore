@@ -26,10 +26,26 @@ docs/
 # because a container cannot run `make generate` on boot. 72 KB each, and
 # still reproducible: `make generate SEED=42` rewrites them byte for byte.
 data/
-!data/seed42/
-!data/seed42/**
+# The eight the hosted demo serves. 72 KB each, and still reproducible —
+# `python tasks.py generate --seed N` rewrites any of them byte for byte.
+# Seed 42 is the demo, 7 is the held-out one, 1-5 are the multi-seed spread
+# the README reports mean +/- std over, 99 is a spare.
+!data/seed1/
+!data/seed1/**
+!data/seed2/
+!data/seed2/**
+!data/seed3/
+!data/seed3/**
+!data/seed4/
+!data/seed4/**
+!data/seed5/
+!data/seed5/**
 !data/seed7/
 !data/seed7/**
+!data/seed42/
+!data/seed42/**
+!data/seed99/
+!data/seed99/**
 build/
 
 # Eval run snapshots (keep the directory, ignore the dumps)

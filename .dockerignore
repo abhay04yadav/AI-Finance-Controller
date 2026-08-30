@@ -8,12 +8,9 @@ web/.next
 design
 docs
 eval/runs
-data/seed1
-data/seed2
-data/seed3
-data/seed4
-data/seed5
-data/seed99
+# Only the 5000-scale set is excluded — it is 20x the size and nothing the
+# hosted demo serves. The eight small seeds ship, so ?seed=N works live for
+# every seed the README quotes.
 data/seed42-5000
 **/__pycache__
 *.pyc

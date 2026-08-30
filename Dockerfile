@@ -25,10 +25,11 @@ WORKDIR /app
 COPY . .
 RUN pip install --no-cache-dir .
 
-# Fail the BUILD, not the first request, if the seeds the demo serves are
-# missing. Without them every endpoint returns 500 and the cause is three
-# layers down in a log nobody is watching.
-RUN test -f data/seed42/truth.json && test -f data/seed7/truth.json
+# Fail the BUILD, not the first request, if a seed the demo serves is missing.
+# Without them the screen shows "no dataset at data/seedN" and the cause is
+# three layers down in a log nobody is watching. Checks all eight, because
+# ?seed=N is a link a judge will click and a 404 there reads as broken.
+RUN set -e; for s in 1 2 3 4 5 7 42 99; do       test -f "data/seed$s/truth.json" || { echo "missing data/seed$s"; exit 1; };     done; echo "8 datasets present"
 
 EXPOSE 8000
 

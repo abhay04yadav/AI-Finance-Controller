@@ -146,9 +146,13 @@ class RunStore:
 
         dataset = self.dataset_for(seed, scale)
         if not dataset.exists():
+            # The runner, not make: this string is the one error a visitor to
+            # the hosted demo is most likely to see, and `make` is not on PATH
+            # on a default Windows install — which is exactly where telling
+            # somebody to run it wastes their next ten minutes.
             raise DatasetMissing(
-                f"no dataset at {dataset} — run `make generate SEED={seed} "
-                f"SCALE={scale}` first"
+                f"no dataset at {dataset} — run "
+                f"`python tasks.py generate --seed {seed} --scale {scale}` first"
             )
 
         settings = Settings()
