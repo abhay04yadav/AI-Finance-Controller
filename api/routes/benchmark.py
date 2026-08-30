@@ -71,10 +71,17 @@ def run_benchmark(dataset: Path, *, no_llm: bool = False) -> dict[str, Any]:
     # Imported inside the call, not at module scope: `eval/` reaches for the
     # generator and the whole pipeline, and importing the API should not drag
     # the scoring harness in behind it.
+    from core.config import Settings
     from eval.evaluate import evaluate
 
+    # The same Settings `evaluate` defaults to, read rather than restated: the
+    # calibration chart labels each band with where that confidence would be
+    # ROUTED, and a frontend constant would keep saying 0.85 after somebody
+    # moved the policy.
+    settings = Settings()
+
     t0 = time.perf_counter()
-    metrics = evaluate(dataset, no_llm=no_llm)
+    metrics = evaluate(dataset, no_llm=no_llm, settings=settings)
     wall_ms = (time.perf_counter() - t0) * 1000
 
     return {
@@ -132,9 +139,33 @@ def run_benchmark(dataset: Path, *, no_llm: bool = False) -> dict[str, Any]:
                 # landed here" and "everything here was wrong" are opposite
                 # findings and must not share a glyph.
                 "empty": b.count == 0,
+                "declined": False,
             }
             for b in metrics.calibration
+        ]
+        # The buckets are keyed on a confidence, so a credit the system gave NO
+        # answer for lands in none of them — and the table is captioned "every
+        # record grouped by how sure the system was". Dropping them made the
+        # bars sum to 59 of 60 and quietly hid the one record this page exists
+        # to be honest about. They get their own row: no confidence to bucket
+        # them by, and no precision to report, because declining is not an
+        # answer that can be right or wrong.
+        + [
+            {
+                "label": "no answer given",
+                "records": metrics.total - metrics.attempted,
+                "correct": 0,
+                "precision": 0.0,
+                "empty": metrics.total == metrics.attempted,
+                "declined": True,
+            }
         ],
+        # The routing thresholds this run actually used. The calibration chart
+        # labels each band with where that confidence would be ROUTED, and it
+        # cannot do that from constants compiled into the frontend — change
+        # the policy and the labels have to follow it.
+        "auto_post_threshold": settings.auto_post_threshold,
+        "review_threshold": settings.review_threshold,
         # ---- the reason a judge can check us (§9.1)
         "fingerprint": metrics.fingerprint,
     }
