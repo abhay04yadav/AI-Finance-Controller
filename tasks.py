@@ -46,6 +46,9 @@ HELP = """AI Finance Controller
   eval          score the agent against truth.json    [gate 3]
   demo          generate + match + eval at demo scale [gate 14]
 
+  api           serve the API on :8000                [gate 12]
+  web           serve the screens on :3000            [gate 12]
+
   test          pytest
   lint          ruff
   typecheck     mypy
@@ -55,9 +58,14 @@ HELP = """AI Finance Controller
 """
 
 
-def run(*cmd: str) -> int:
-    print("$", " ".join(cmd))
-    return subprocess.call(list(cmd))
+def run(*cmd: str, cwd: str | None = None) -> int:
+    print("$", " ".join(cmd), f"   (in {cwd})" if cwd else "")
+    # shell=True on Windows only: npm is npm.cmd there, and subprocess will
+    # not resolve it otherwise.
+    shell = cwd is not None and sys.platform == "win32"
+    if shell:
+        return subprocess.call(" ".join(cmd), cwd=cwd, shell=True)
+    return subprocess.call(list(cmd), cwd=cwd)
 
 
 def make_venv() -> int:
@@ -103,6 +111,16 @@ def main() -> int:
             if rc:
                 return rc
         return 0
+    # The two long-running processes. Present here and not only in the
+    # Makefile because this runner is documented as the equivalent fallback,
+    # and a fallback that is missing targets is not equivalent — a reader on
+    # Windows following the README would have hit "unknown target: api".
+    if t == "api":
+        return run(PY, "-m", "uvicorn", "api.main:app",
+                   "--host", "127.0.0.1", "--port", "8000", "--reload")
+    if t == "web":
+        return run("npm", "run", "dev", cwd="web")
+
     if t == "test":
         return run(PY, "-m", "pytest", "tests/", "-v")
     if t == "lint":

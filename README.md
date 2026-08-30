@@ -5,6 +5,10 @@ then closes the books and states the cash position.**
 
 Razorpay /buildathon · Track 04 — *Run the books and the cash position*
 
+**[Live demo](https://ai-finance-controller-beta.vercel.app/exceptions)** ·
+swap the dataset with `?seed=7` on any screen.
+The first request after an idle spell wakes the API container and takes ~30s.
+
 > **A reconciliation tool matches records. A controller closes the books.**
 >
 > Deterministic where we can be. Probabilistic only where we must be. Measured everywhere.
@@ -21,6 +25,8 @@ Razorpay /buildathon · Track 04 — *Run the books and the cash position*
 - [Key design decisions](#key-design-decisions)
 - [Measurement](#measurement)
 - [Quickstart](#quickstart)
+- [Using a Claude API key](#using-a-claude-api-key)
+- [Configuration](#configuration)
 - [Project structure](#project-structure)
 - [Development](#development)
 - [Engineering invariants](#engineering-invariants)
@@ -412,9 +418,9 @@ The abstraction boundaries are chosen so that three plausible next features stay
 
 ## Measurement
 
-> Every number below is from `make eval` against planted ground truth — measured,
-> never estimated, and truncated rather than rounded up (99.94% prints as 99.9%).
-> Reproduce them with `make eval NO_LLM=1 SCALE=500`.
+> Every number below is from `python tasks.py eval` against planted ground truth —
+> measured, never estimated, and truncated rather than rounded up (99.94% prints as
+> 99.9%). Reproduce them with `python tasks.py eval --no-llm --scale 500`.
 >
 > **These are the deterministic core's numbers, with zero LLM calls.** The
 > adjudication layer is built (gate 11) and does not change them: with no API
@@ -516,34 +522,88 @@ Measurement is designed to answer the obvious objections before they are raised:
 
 ## Quickstart
 
-**Requirements:** Python 3.11+. PostgreSQL is needed only from the posting layer onward. No
-API key is required — the deterministic core and the `--no-llm` path run without one.
+**Requirements:** Python 3.11+. Nothing else — no database, no API key, no Docker.
+PostgreSQL is optional and only used from the posting layer onward.
 
 ```bash
-# 1. Create the project virtualenv and install everything
+git clone https://github.com/abhay04yadav/AI-Finance-Controller.git
+cd AI-Finance-Controller
+
+python tasks.py setup                 # create .venv and install
+python tasks.py generate              # build the seeded dataset + ground truth
+python tasks.py eval                  # score the agent against it
+```
+
+Under two minutes on a cold clone. `tasks.py` resolves the project virtualenv itself —
+**there is no activate step**, and nothing installs into your global Python.
+
+You should see, on any machine:
+
+```
+Match rate              98.3%   (59/60)
+Match precision        100.0%   (59/59 correct)   <- the number that matters
+Exception recall       100.0%   (10/10 that need a human)
+Auto-resolution         80.0%   (48 posted without a human)
+Genuine misses              1   RFND-5004 — CROSS_PERIOD_REFUND
+metrics fingerprint  c1ae52496e22
+```
+
+**The fingerprint is the claim.** If yours reads `c1ae52496e22`, you reproduced this
+run exactly — same matches, same journal entries, same cash position. Nothing here is
+pinned, so pip resolves whatever is current; the figures above were last confirmed on a
+clean clone that pulled FastAPI 0.141, Pydantic 2.13 and pytest 9.1, all far newer than
+anything this was written against.
+
+**No API key needed.** The 32 L4 verdicts this run depends on are committed under
+`adjudication/cache/`, content-addressed by prompt and payload. A judge with no
+credential gets the same numbers as the author. See
+[Using a Claude API key](#using-a-claude-api-key) to run L4 live instead.
+
+<details>
+<summary><b>Held-out seed, multi-seed, and the ablation</b></summary>
+
+```bash
+python tasks.py eval --seed 7 --scale 500        # never tuned against
+python tasks.py eval --seeds 1,2,3,4,5           # mean +/- std
+python tasks.py eval --no-llm                    # deterministic core alone
+```
+
+Seed 7 is the honest answer to *"did you overfit to your own data?"*. `--no-llm` is a
+first-class supported mode, not a debug flag: the deterministic core scores 98.3% match
+rate at 100.0% precision with the model switched off entirely.
+
+</details>
+
+<details>
+<summary><b>If you have GNU make</b></summary>
+
+Every target is also a make target, and each runs inside `.venv/` automatically:
+
+```bash
 make setup
-
-# 2. Generate a seeded synthetic dataset with ground truth
 make generate SEED=42 SCALE=500
-
-# 3. Score the agent against that ground truth
 make eval SEED=42 SCALE=500
 ```
 
-Every `make` target runs inside `.venv/` automatically — **there is no activate step**, and
-nothing installs into your global Python.
+`make help` lists every target and prints which interpreter it resolved to. On Windows
+`make` is usually absent; MinGW ships `mingw32-make`, but `python tasks.py` needs nothing
+extra and is why it leads above.
+
+</details>
 
 <details>
-<summary><b>Windows, or no GNU make</b></summary>
+<summary><b>Running the screens locally</b></summary>
 
-MinGW's `mingw32-make <target>` works, or use the bundled runner, which resolves the same
-virtualenv:
+Two processes. The API holds the run in memory, so it has to outlive the request:
 
 ```bash
-python tasks.py setup
-python tasks.py generate --seed 42 --scale 500
-python tasks.py eval --seed 42 --scale 500 --no-llm
+python tasks.py api                              # http://127.0.0.1:8000
+
+cd web && npm install && npm run dev             # http://localhost:3000
 ```
+
+Next proxies `/api/*` to the API, so the browser sees one origin and no CORS. Point it
+somewhere else with `AFC_API_URL=https://your-host npm run dev`.
 
 </details>
 
@@ -558,28 +618,85 @@ source .venv/Scripts/activate     # Git Bash on Windows
 
 </details>
 
-Run `make help` for every target; it prints which interpreter it resolved to.
+---
 
-### Configuration
+## Using a Claude API key
 
-Copy `.env.example` to `.env` and fill in what you need.
+**You do not need one.** Everything above reproduces without a credential, because the
+verdicts are cached. Supply a key only to watch L4 adjudicate live, or to run it against
+a dataset whose cases are not in the cache.
 
-**No secret is ever committed.** `.env` is gitignored, `.env.example` contains keys with
-empty values only, and the API key is read from the environment at runtime — never from a
-config file, never from source.
+**1 — get the key.** [console.anthropic.com](https://console.anthropic.com/settings/keys) ->
+API keys -> Create key. It looks like `sk-ant-api03-...`. Treat it like a password.
 
-The LLM client is an **optional extra**, not a base dependency:
+**2 — install the client.** It is an optional extra, deliberately, so gates 0-10 run with
+no LLM library installed at all:
 
 ```bash
-pip install -e ".[llm]"     # only needed for the adjudication layer
+pip install -e ".[llm]"
 ```
 
+**3 — put the key in `.env`** (gitignored, never committed):
+
+```bash
+cp .env.example .env
+```
+
+```ini
+ANTHROPIC_API_KEY=sk-ant-api03-your-key-here
+```
+
+Or set it for one command, which beats whatever is in the file:
+
+```bash
+ANTHROPIC_API_KEY=sk-ant-... python tasks.py eval          # bash
+$env:ANTHROPIC_API_KEY="sk-ant-..."; python tasks.py eval  # PowerShell
+```
+
+**4 — confirm it was picked up.** The API reports both facts on its health endpoint, so
+you never have to guess whether a key reached the process:
+
+```bash
+curl http://127.0.0.1:8000/api/health
+# {"ok":true,...,"env_file_loaded":true,"llm_credential":true}
+```
+
+`llm_credential: false` with a key set means the `.env` was not found from the working
+directory you launched from.
+
+**What it costs.** Three calls on seed 42, capped at 0.5% of records, on `claude-opus-5`
+at low reasoning effort. Under a rupee. Every verdict is written to
+`adjudication/cache/` keyed by prompt version and payload hash, so the second run of the
+same seed makes zero calls and returns byte-identical answers — which is what keeps the
+fingerprint stable.
+
+**On the hosted demo**, set `ANTHROPIC_API_KEY` in the Render service's environment. It
+is declared `sync: false` in `render.yaml`, so it is never in the repo.
+
 **What happens without a key.** Nothing breaks and nothing is invented. L4 serves any
-cached verdict it has, and for anything uncached it reports on the run that no credential
-was available and leaves those credits on the exception list. The full report still prints,
-with `LLM calls 0` — which is the truth, not a placeholder. This path is tested, because
-the first version of it died with a `TypeError` stack trace mid-reconciliation on exactly
-the machine a judge would use.
+cached verdict it has, and for anything uncached it records on the run that no credential
+was available and leaves those credits on the exception list. The full report still
+prints. This path is tested, because the first version of it died with a `TypeError`
+mid-reconciliation on exactly the machine a judge would use.
+
+---
+
+## Configuration
+
+Copy `.env.example` to `.env` and fill in what you need. Every tunable that is not a
+secret lives in `core/config.py` as a typed dataclass — thresholds, tolerances and
+windows in one place, not scattered as literals.
+
+**No secret is ever committed.** `.env` is gitignored, `.env.example` carries empty
+values only, and the key is read from the environment at runtime — never from a config
+file, never from source. See [Using a Claude API key](#using-a-claude-api-key).
+
+| Variable | Needed for | Default |
+| --- | --- | --- |
+| `ANTHROPIC_API_KEY` | L4 live adjudication only | unset — cached verdicts are used |
+| `TZ` | business dates, never UTC | `Asia/Kolkata` |
+| `DATABASE_URL` | the optional Postgres repository | in-memory |
+| `AFC_API_URL` | pointing the web app at a remote API | `http://127.0.0.1:8000` |
 
 ---
 
@@ -631,20 +748,25 @@ make layer-check
 
 ## Development
 
-| Command | Purpose |
+Every target runs either way — `python tasks.py <target>` needs nothing installed,
+`make <target>` is the Unix convenience. Both resolve `.venv/` themselves.
+
+| Target | Purpose |
 |---|---|
-| `make setup` | Create `.venv/` and install with dev extras |
-| `make generate` | Build a seeded synthetic dataset and its ground truth |
-| `make match` | Run the reconciliation pipeline |
-| `make eval` | Score against ground truth and print the report |
-| `make determinism` | Run `make eval` twice and prove the two are byte-identical |
-| `make api` | Serve the four screens' data on :8000 |
-| `make web` | Next.js dev server on :3000 (needs `make api` alongside) |
-| `make demo` | Generate + match + eval at demo scale |
-| `make test` | Run the test suite |
-| `make lint` / `make typecheck` | ruff / mypy |
-| `make layer-check` | Enforce the dependency rule |
-| `make drift-check` | Six standing checks against slow decay |
+| `setup` | Create `.venv/` and install with dev extras |
+| `generate` | Build a seeded synthetic dataset and its ground truth |
+| `match` | Run the reconciliation pipeline |
+| `eval` | Score against ground truth and print the report |
+| `api` | Serve the four screens' data on :8000 |
+| `web` | Next.js dev server on :3000 (needs `api` alongside) |
+| `demo` | Generate + match + eval at demo scale |
+| `test` | Run the test suite |
+| `lint` / `typecheck` | ruff / mypy |
+| `layer-check` | Enforce the dependency rule |
+| `drift-check` | Six standing checks against slow decay |
+
+`make determinism` runs `eval` twice and proves the two are byte-identical; it is a
+make-only target because it is a shell pipeline, not a command.
 
 ### Quality gates
 
