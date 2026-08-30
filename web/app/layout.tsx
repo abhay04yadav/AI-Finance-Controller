@@ -19,7 +19,7 @@ export default function RootLayout({
       <body>
         <div className="shell">
           {/* Nav reads the seed off the query string, so it suspends. */}
-          <Suspense fallback={<div className="nav" />}>
+          <Suspense fallback={<div className="topbar" style={{ minHeight: 44 }} />}>
             <Nav />
           </Suspense>
           {children}

@@ -18,6 +18,21 @@ export interface ActionOffer {
   label: string;
   description: string;
   posts_entry: boolean;
+  /** "Dr Bank ₹24,860.00 · Cr Suspense ₹24,860.00", or "no entry posted".
+   *  Built from the action's own declared shape, so the line under a button
+   *  and the entry behind it cannot drift apart. */
+  posts_preview: string;
+  /** The same entry as structured lines, so a posted card can draw the table
+   *  instead of re-parsing the preview string. */
+  posting_lines: { side: string; account: string; amount_paise: Money }[];
+}
+
+/** One line of "How this was decided". */
+export interface DecisionLayer {
+  layer: string;
+  /** "ok" | "warn" | "off" — whether this layer ran, flagged, or was skipped. */
+  state: string;
+  note: string;
 }
 
 export interface TraceNode {
@@ -77,6 +92,23 @@ export interface ExceptionCard {
   why: string;
   /** "model" when §4.4 job B wrote it, "classifier" when the rules did. */
   why_source: "model" | "classifier";
+  /** Design 4: one sentence for the reason code, in a controller's words. */
+  plain: string;
+  /** Design 4: the same, but about THIS credit and its amount. */
+  headline: string;
+  /** P0: the four-word label a row leads with, scanned before it is read. */
+  title: string;
+  /** P0: "5 candidates · unadjudicated" — the SIGNAL column. */
+  signal: string;
+  /** Whole days between the value date and the run. */
+  age_days: number | null;
+  /** The adjudicator's confidence, when L4 supplied a hypothesis. `null`
+   *  means it was never asked or declined — not that it was unsure. */
+  confidence: number | null;
+  /** Layer by layer, what decided this. */
+  layers: DecisionLayer[];
+  /** The action the pipeline puts first. */
+  recommended_action: string | null;
   open_balance_paise: Money | null;
   actions: ActionOffer[];
   trace: Trace | null;
@@ -100,7 +132,49 @@ export interface ExceptionsPayload {
   started_at: string;
   fee_rate: number | null;
   exceptions: ExceptionCard[];
-  by_reason: { reason_code: string; count: number }[];
+  by_reason: {
+    reason_code: string;
+    count: number;
+    paise: Money;
+    share: number;
+  }[];
+  /** Design 4a's stacked bar: one segment per exception, largest first. */
+  composition: {
+    ref: string;
+    reason_code: string;
+    paise: Money;
+    share: number;
+  }[];
+  /** P0 "Where every record went". Disjoint segments that sum to the credit
+   *  count — one per layer that produced a match, plus what is still open. */
+  funnel: {
+    key: string;
+    label: string;
+    count: number;
+    paise: Money;
+    share: number;
+    note: string;
+  }[];
+  /** The four tiles above the filter chips. Empty when nothing is open. */
+  highlights: {
+    largest?: { amount_paise: Money; amount: string; reason_code: string };
+    oldest?: {
+      value_date: string;
+      age_days: number;
+      reason_code: string;
+    } | null;
+    most_common?: { reason_code: string; count: number; tied_with: number };
+    needs_human?: { count: number; of: number };
+  };
+  /** What ran with no model at all, and what the model cost. */
+  ai_mode: {
+    deterministic: { layer: string; detail: string }[];
+    llm_calls: number;
+    llm_cost_paise: Money;
+    llm_share: number;
+    adjudicated: number;
+    notes: string[];
+  };
   in_transit: {
     count: number;
     total_paise: Money;
@@ -144,6 +218,11 @@ export interface ReviewItem {
   entry_total_paise: Money;
   value_date: string;
   settlement_id: string | null;
+  /** Design 4b: what this entry is, in one sentence. */
+  headline: string;
+  /** What cost this entry the last points of confidence — why it is in the
+   *  queue at all rather than posted. */
+  why_not_auto: string[];
   prepared_entry: PreparedEntry;
   decision: string | null;
 }
@@ -255,8 +334,50 @@ export interface BenchmarkPayload {
     correct: number;
     precision: number;
     empty: boolean;
+    /** Credits the system gave no answer for. They have no confidence to
+     *  bucket them by and no precision to report — declining is not an answer
+     *  that can be right or wrong. */
+    declined: boolean;
   }[];
+  /** The routing thresholds this run used. The calibration chart labels each
+   *  band with where that confidence would be ROUTED, so it has to read the
+   *  policy rather than restate it. */
+  auto_post_threshold: number;
+  review_threshold: number;
   fingerprint: string;
+}
+
+/** One line of the audit trail. `actor_kind` is the axis the filters use:
+ *  "system" for the deterministic layers, "llm" for adjudication, "user" for
+ *  a person. */
+export interface AuditEvent {
+  at: string;
+  actor: string;
+  actor_kind: string;
+  subject: string;
+  detail: string;
+  entry_numbers?: string[];
+}
+
+export interface AuditDecision {
+  at: string;
+  actor: string;
+  actor_kind: string;
+  subject: string;
+  detail: string;
+  evidence: string[];
+  confidence: number | null;
+}
+
+export interface AuditTrailPayload {
+  run_id: string;
+  label: string;
+  seed: number;
+  generated_at: string;
+  events: AuditEvent[];
+  /** Everything a machine decided, on the same actor axis as `events`. */
+  decisions: AuditDecision[];
+  summary: Record<string, number>;
 }
 
 export interface RunSummary {
@@ -279,6 +400,9 @@ export interface RunSummary {
   llm_calls: number;
   adjudication_notes: string[];
   closed: boolean;
+  /** Counted server-side the way /exceptions counts it, so the tab and the
+   *  page can never disagree. */
+  open_exceptions: number;
 }
 
 export class ApiError extends Error {
@@ -324,11 +448,21 @@ export const api = {
       `/api/review/${encodeURIComponent(utr)}/approve${q(seed)}`,
       { method: "POST" },
     ),
-  reject: (utr: string, seed?: number) =>
-    call<{ decision: string }>(
-      `/api/review/${encodeURIComponent(utr)}/reject${q(seed)}`,
+  /** A rejection carries the reviewer's reason code, because the row is about
+   *  to reappear on /exceptions and "a human said no" is not a reason. */
+  reject: (utr: string, seed?: number, reasonCode?: string, note?: string) => {
+    const extra = [
+      reasonCode ? `reason_code=${encodeURIComponent(reasonCode)}` : "",
+      note ? `note=${encodeURIComponent(note)}` : "",
+    ].filter(Boolean);
+    const qs = q(seed);
+    const sep = qs ? "&" : "?";
+    const tail = extra.length ? `${sep}${extra.join("&")}` : "";
+    return call<{ decision: string; reason_code: string | null }>(
+      `/api/review/${encodeURIComponent(utr)}/reject${qs}${tail}`,
       { method: "POST" },
-    ),
+    );
+  },
   act: (ref: string, code: string, seed?: number) =>
     call<{ entry_numbers: string[]; detail: string }>(
       `/api/exceptions/${encodeURIComponent(ref)}/actions/${code}${q(seed)}`,
@@ -345,9 +479,7 @@ export const api = {
       { method: "POST" },
     ),
   auditTrail: (seed?: number) =>
-    call<{ events: unknown[]; summary: Record<string, number> }>(
-      `/api/runs/current/audit-trail${q(seed)}`,
-    ),
+    call<AuditTrailPayload>(`/api/runs/current/audit-trail${q(seed)}`),
   benchmark: (seed?: number) =>
     call<BenchmarkPayload>(`/api/benchmark${q(seed)}`, { method: "POST" }),
 };

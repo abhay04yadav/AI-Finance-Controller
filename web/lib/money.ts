@@ -74,3 +74,23 @@ export function stamp(iso: string | null | undefined): string {
   const mm = String(d.getMinutes()).padStart(2, "0");
   return `${String(d.getDate()).padStart(2, "0")}-${month} ${hh}:${mm}`;
 }
+
+/**
+ * Whole days between a value date and the run — "how long has this been
+ * sitting there".
+ *
+ * Both operands come off the payload (`value_date`, `started_at`); this is a
+ * date subtraction, the same class of operation as `shortDate` reformatting
+ * one. Nothing here invents a figure the backend does not know.
+ */
+export function ageDays(
+  valueDate: string | null | undefined,
+  runAt: string | null | undefined,
+): number | null {
+  if (!valueDate || !runAt) return null;
+  const from = new Date(`${valueDate}T00:00:00`);
+  const to = new Date(runAt);
+  if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) return null;
+  const days = Math.floor((to.getTime() - from.getTime()) / 86_400_000);
+  return days < 0 ? null : days;
+}
