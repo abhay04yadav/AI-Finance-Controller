@@ -63,7 +63,66 @@ def cash_awaiting(item: ReviewItem) -> int:
     return item.prepared_entry.amount_for(str(Account.BANK))
 
 
-def serialize_review_item(item: ReviewItem, decision: str | None) -> dict[str, Any]:
+def why_not_auto(item: ReviewItem, ceiling: float) -> list[str]:
+    """The reasons this entry stopped short of posting on its own.
+
+    Read off the match itself — how many orders it had to reconstruct, whether
+    the narration carried an identifier, whether the date needed a buffer. A
+    queue that says "0.91, please look" without saying what cost the other
+    0.09 asks a controller to re-derive the matcher's own reasoning.
+    """
+    reasons: list[str] = []
+    n = len(item.ledger_ids)
+    if n > 1:
+        reasons.append(
+            f"the credit had to be reconstructed from {n} orders, "
+            "not matched directly"
+        )
+    entry = item.prepared_entry
+    if not entry.source_utr or entry.source_utr not in (item.reason or ""):
+        reasons.append("the bank narration carries no order reference")
+    if item.confidence < ceiling:
+        reasons.append(
+            f"auto-posting requires {ceiling:.2f}; this scored "
+            f"{item.confidence:.2f}"
+        )
+    return reasons
+
+
+def headline_for(item: ReviewItem) -> str:
+    """One sentence saying what this entry is. Design 4b.
+
+    "One transfer of ₹7,827.25 paid for 3 orders worth ₹8,000.00. The
+    difference is the gateway's cut and the tax on it."
+
+    Composed here rather than in the component for the same reason the
+    exception headlines are: it is a sentence ABOUT figures, and a sentence
+    assembled in JSX is one nobody tests and one that can quietly disagree with
+    the table beneath it. Every number in it is read off the same prepared
+    entry the table renders.
+    """
+    entry = item.prepared_entry
+    landing = cash_awaiting(item)
+    gross = entry.total_debits
+    orders = len(item.ledger_ids)
+    refund = -entry.amount_for(str(Account.REFUNDS))
+    tail = (
+        " The difference is the gateway's cut and the tax on it."
+        if refund == 0
+        else (
+            f" The difference is the gateway's cut, the tax on it, and "
+            f"{Money(abs(refund))} refunded."
+        )
+    )
+    return (
+        f"One transfer of {Money(landing)} paid for {orders} order"
+        f"{'' if orders == 1 else 's'} worth {Money(gross)}.{tail}"
+    )
+
+
+def serialize_review_item(
+    item: ReviewItem, decision: str | None, *, ceiling: float = 1.0
+) -> dict[str, Any]:
     entry = item.prepared_entry
     landing = cash_awaiting(item)
     return {
@@ -79,6 +138,11 @@ def serialize_review_item(item: ReviewItem, decision: str | None) -> dict[str, A
         "entry_total_paise": entry.total_debits,
         "value_date": entry.entry_date.isoformat(),
         "settlement_id": entry.settlement_id,
+        "headline": headline_for(item),
+        # What cost this entry the last few points of confidence. The queue
+        # exists because these did not reach the ceiling; saying nothing about
+        # why makes a reviewer re-derive the matcher's reasoning.
+        "why_not_auto": why_not_auto(item, ceiling),
         "prepared_entry": serialize_entry(entry),
         "decision": decision,
     }
@@ -102,6 +166,7 @@ def review_payload(run: Any) -> dict[str, Any]:
     pending_paise = sum(cash_awaiting(i) for i in items)
 
     settings = run.settings
+    ceiling = settings.auto_post_threshold
     return {
         "run_id": run.run_id,
         "count": len(items),
@@ -110,11 +175,15 @@ def review_payload(run: Any) -> dict[str, Any]:
         "auto_post_threshold": settings.auto_post_threshold,
         "review_threshold": settings.review_threshold,
         "items": [
-            serialize_review_item(i, run.review_decisions.get(i.utr))
+            serialize_review_item(
+                i, run.review_decisions.get(i.utr), ceiling=ceiling
+            )
             for i in sorted(items, key=lambda i: (-cash_awaiting(i), i.utr))
         ],
         "decided": [
-            serialize_review_item(i, run.review_decisions.get(i.utr)) for i in decided
+            serialize_review_item(
+                i, run.review_decisions.get(i.utr), ceiling=ceiling
+            ) for i in decided
         ],
         "fee_rate": result.fee_rate,
         "gst_rate": settings.gst_rate,
@@ -123,6 +192,10 @@ def review_payload(run: Any) -> dict[str, Any]:
 
 class Unbalanced(ValueError):
     """A prepared entry that does not balance. Refused, never posted (§9.4)."""
+
+
+class UnknownReasonCode(ValueError):
+    """A rejection quoted a code the system does not define."""
 
 
 class AlreadyDecided(ValueError):
@@ -173,28 +246,58 @@ def approve(run: Any, utr: str, actor: str) -> dict[str, Any]:
     }
 
 
-def reject(run: Any, utr: str, actor: str) -> dict[str, Any]:
-    """Send the credit back to the exception list.
+def reject(
+    run: Any, utr: str, actor: str, reason_code: str = "", note: str = ""
+) -> dict[str, Any]:
+    """Send the credit back to the exception list, with the reviewer's reason.
 
     Nothing is posted and nothing is un-posted: the money is already sitting in
     suspense, which is exactly where a credit nobody has confirmed belongs. What
     changes is that a person has now looked at it and declined to confirm it.
+
+    The reason code travels with the rejection because the row is about to
+    reappear on `/exceptions`, and a row that arrives there saying only "a
+    human said no" has thrown away the most useful thing the human knew. It is
+    validated against `ReasonCode` rather than stored as free text — an
+    exception list filtered by codes the reviewer invented is not filterable.
     """
+    from core.reason_codes import ReasonCode
     from pipeline.audit import EventType
 
     item = _find(run, utr)
     if run.review_decisions.get(utr) is not None:
         raise AlreadyDecided(f"{utr} was already {run.review_decisions[utr]}")
 
+    code = (reason_code or "").strip().upper()
+    if code and code != "OTHER":
+        try:
+            code = str(ReasonCode(code))
+        except ValueError as exc:
+            raise UnknownReasonCode(f"{reason_code} is not a reason code") from exc
+
+    given = note.strip() if code == "OTHER" else ""
+    detail = f"Rejected in review: {item.reason}"
+    if code:
+        detail = f"Rejected as {code}"
+        if given:
+            detail = f"{detail} — {given}"
+        detail = f"{detail}. Matcher had said: {item.reason}"
+
     run.review_decisions[utr] = "rejected"
     run.trail.record(
         EventType.REVIEW_REJECTED,
         utr,
         actor=actor,
-        detail=f"Rejected in review: {item.reason}",
+        detail=detail,
         amount_paise=cash_awaiting(item),
     )
-    return {"utr": utr, "decision": "rejected", "posted": False, "entry_number": None}
+    return {
+        "utr": utr,
+        "decision": "rejected",
+        "posted": False,
+        "entry_number": None,
+        "reason_code": code or None,
+    }
 
 
 def _find(run: Any, utr: str) -> ReviewItem:
