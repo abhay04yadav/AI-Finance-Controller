@@ -10,6 +10,7 @@ from __future__ import annotations
 import ast
 import inspect
 import json
+import re
 import statistics
 import time
 from pathlib import Path
@@ -20,7 +21,7 @@ from core.config import Settings
 from core.dates import BusinessCalendar
 from core.models import Direction, Source
 from core.reason_codes import ReasonCode
-from eval.evaluate import evaluate, is_correct
+from eval.evaluate import build_pipeline, evaluate, is_correct
 from generator.generate import generate
 from ingest.normalizer import load_dataset
 from matching.exact_matcher import ExactMatcher
@@ -214,6 +215,39 @@ def test_a_refund_is_worth_more_than_its_face_value_in_gross_space() -> None:
     face = 24_000
     assert fee.expected_gross(face) > face
     assert abs(fee.expected_gross(face) - 24_530) < 50
+
+
+def test_the_stated_drift_is_the_one_the_solver_actually_enforced(
+    dataset: Path,
+) -> None:
+    """A reason that says "within N paise of tolerance T" must have N <= T.
+
+    `_propose` measured the drift over face values while the solver matched
+    over gross equivalents, so on any settlement carrying a refund the two
+    diverged by the refund's own MDR and GST. Three of eleven L3 proposals on
+    seed 42 printed a drift above their own tolerance, the worst claiming
+    "within 717 paise of rounding tolerance 0" about a reconstruction that
+    tied exactly. The match was right every time; only the sentence explaining
+    it was wrong, which is the more dangerous of the two — a controller who
+    checks that arithmetic and finds it absurd stops trusting the lines that
+    are correct.
+    """
+    result = build_pipeline().run(dataset)
+
+    stated = re.compile(r"within (\d+) paise of rounding tolerance (\d+)")
+    checked = 0
+    for item in result.review_queue:
+        found = stated.search(item.reason)
+        if not found:
+            continue
+        checked += 1
+        drift, tolerance = int(found.group(1)), int(found.group(2))
+        assert drift <= tolerance, (
+            f"{item.utr} says it is within {drift} paise of a {tolerance} "
+            f"paise tolerance, which is not a thing that can be true"
+        )
+
+    assert checked, "no L3 proposal quoted a drift — the test proved nothing"
 
 
 # ==========================================================================

@@ -14,7 +14,9 @@ Two defences, applied together:
    False and the renderers fall back to ASCII. Degraded output beats a
    traceback, and "Rs.1,234.56" beats "?1,234.56".
 
-This module holds no domain logic and imports nothing from the project. It
+This module holds no domain logic and imports nothing outside `core/` — only
+`group_indian`, the digit-grouping rule, which it shares with `Money.__str__`
+so the terminal and the UI cannot drift into two different notations. It
 configures interpreter streams and chooses glyphs; it never writes anything
 itself, which is why it can live in `core/` without breaking the no-I/O rule.
 """
@@ -24,6 +26,8 @@ from __future__ import annotations
 import contextlib
 import sys
 from typing import Final
+
+from core.money import group_indian
 
 RUPEE: Final = "₹"
 
@@ -105,4 +109,4 @@ def money(paise: int) -> str:
     """
     sign = "-" if paise < 0 else ""
     rupees, remainder = divmod(abs(paise), 100)
-    return f"{sign}{glyph('rupee')}{rupees:,}.{remainder:02d}"
+    return f"{sign}{glyph('rupee')}{group_indian(rupees)}.{remainder:02d}"

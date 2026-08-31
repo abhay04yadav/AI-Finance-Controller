@@ -33,6 +33,29 @@ class MoneyParseError(ValueError):
     """
 
 
+def group_indian(rupees: int) -> str:
+    """Indian digit grouping: 1,08,958 — three digits, then twos.
+
+    These are rupee figures for an Indian finance team, and `f"{n:,}"` groups
+    in threes throughout: the terminal printed ₹1,024,633.00 while the UI,
+    which formats through `Intl.NumberFormat("en-IN")`, printed ₹10,24,633.00
+    for the same number. One run reading two ways depending on which surface
+    you looked at is the kind of discrepancy that makes a reader check every
+    other figure by hand.
+    """
+    digits = str(rupees)
+    if len(digits) <= 3:
+        return digits
+    head, last_three = digits[:-3], digits[-3:]
+    groups: list[str] = []
+    while len(head) > 2:
+        groups.insert(0, head[-2:])
+        head = head[:-2]
+    if head:
+        groups.insert(0, head)
+    return f"{','.join(groups)},{last_three}"
+
+
 @dataclass(frozen=True, slots=True, order=True)
 class Money:
     """An amount in integer paise. Immutable, ordered, hashable."""
@@ -135,4 +158,4 @@ class Money:
         """
         sign = "-" if self.paise < 0 else ""
         rupees, paise = divmod(abs(self.paise), PAISE_PER_RUPEE)
-        return f"{sign}₹{rupees:,}.{paise:02d}"
+        return f"{sign}₹{group_indian(rupees)}.{paise:02d}"

@@ -166,7 +166,14 @@ class SubsetMatcher:
         target: int,
         tol: int,
     ) -> MatchProposal:
-        gross = sum(r.signed_amount for r in rows)
+        # Gross-EQUIVALENT, not face value. The solver matched these rows
+        # against `target` through `_gross_equivalents`, and `tol` is the
+        # tolerance it applied there; measuring the drift in face-value space
+        # and printing it beside that tolerance compares two different
+        # quantities. On a settlement carrying a refund the two diverge by the
+        # refund's own MDR and GST, so the line claimed "within 717 paise of
+        # rounding tolerance 0" about a match that reconstructed exactly.
+        gross = sum(_gross_equivalents(rows, fee))
         drift = gross - target
         orders = [r for r in rows if r.direction is Direction.INFLOW]
         refunds = [r for r in rows if r.direction is Direction.OUTFLOW]
