@@ -48,6 +48,8 @@
   --paper-raised: #fbf8f2;   /* header bands, stat cells */
   --paper-panel: #fdfbf6;    /* an opened exception card */
   --paper-sunk: #f5f0e5;     /* table headers, the trace panel */
+  --paper-tint: #eef1f3;     /* the run / fee-model pair */
+  --rule-tint: #d5dde2;
   --paper-settled: #f6f2e9;  /* a chip, a row at rest */
   --edge: #d8d0c2;           /* card border */
 
@@ -575,23 +577,6 @@ body {
   cursor: progress;
 }
 
-/* ---------------------------------------------------------- the keycaps */
-
-
-.keyrow {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-}
-
-.keycap {
-  padding: 2px 6px;
-  border: 1px solid var(--rule-key);
-  border-radius: 3px;
-  background: var(--keycap);
-  font-size: 10.5px;
-}
-
 /* ----------------------------------------------------------- the trace */
 
 .trace {
@@ -614,7 +599,7 @@ body {
 }
 
 .trace-body {
-  padding: 22px 22px 18px;
+  padding: 16px 22px 14px;
 }
 
 .trace svg {
@@ -633,19 +618,22 @@ body {
  * value before its delay elapses, which is worse than no animation at all.
  */
 .t-in {
-  animation: tdraw 0.26s cubic-bezier(0.22, 0.7, 0.3, 1) both;
+  animation: tdraw calc(0.26s * var(--t-scale, 1))
+    cubic-bezier(0.22, 0.7, 0.3, 1) both;
 }
 
 /* Paired with pathLength="1" on the path, so one duration draws any length. */
 .t-line {
   stroke-dasharray: 1;
-  animation: tline 0.3s cubic-bezier(0.35, 0.6, 0.35, 1) both;
+  animation: tline calc(0.3s * var(--t-scale, 1))
+    cubic-bezier(0.35, 0.6, 0.35, 1) both;
 }
 
 .t-pop {
   transform-box: fill-box;
   transform-origin: center;
-  animation: tpop 0.28s cubic-bezier(0.22, 0.9, 0.3, 1) both;
+  animation: tpop calc(0.28s * var(--t-scale, 1))
+    cubic-bezier(0.22, 0.9, 0.3, 1) both;
 }
 
 /* --------------------------------------------- the T+2 transit track
@@ -1467,65 +1455,6 @@ body {
   margin-top: 3px;
 }
 
-/* Two columns. 55/45 as designed, and they stack below 1100px rather than
- * squeezing the trace into a strip — the diagram has a real minimum width. */
-.exc-cols {
-  display: grid;
-  grid-template-columns: minmax(0, 55fr) minmax(0, 45fr);
-  gap: 0;
-  align-items: start;
-}
-
-.exc-left {
-  padding: 32px 40px 32px calc(var(--gutter) - 4px);
-  min-width: 0;
-}
-
-.exc-right {
-  padding: 28px var(--gutter) 30px 36px;
-  border-left: 1px solid var(--rule);
-  min-width: 0;
-  align-self: stretch;
-}
-
-/* Between those two, the split tips towards the trace. 55/45 is right when
- * there is width to spend; on a 1440 laptop the left column has 700px for
- * prose that is measure-capped at 640 anyway, while the right column is
- * squeezing a 940-unit diagram. Giving the eight points to the drawing costs
- * the prose nothing it was using. */
-@media (max-width: 1740px) {
-  .exc-cols {
-    grid-template-columns: minmax(0, 47fr) minmax(0, 53fr);
-  }
-}
-
-/* Narrower than this the two columns stop paying. Both breakpoints above are
- * derived rather than chosen, and the derivation is worth writing down
- * because guessing them wrong clips the diagram by 19px with no scrollbar to
- * say so:
- *
- *   available = share x (viewport - 2 x gutter) - 76   (the column's padding)
- *
- * and `available` must clear the trace's 660px floor. At 45% that needs a
- * ~1740px viewport; at 53% it needs ~1480. So 55/45 above 1740, 47/53 down to
- * 1480, and stacked below — where the diagram takes the full panel width and
- * draws larger than it ever did inside the old 1200px card. */
-@media (max-width: 1480px) {
-  .exc-cols {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .exc-right {
-    border-left: 0;
-    border-top: 1px solid var(--rule);
-    padding: 28px var(--gutter) 30px calc(var(--gutter) - 4px);
-  }
-
-  .exc-left {
-    padding-bottom: 28px;
-  }
-}
-
 /* The entry point. Largest thing in the card, with room to be it. */
 .exc-headline {
   font: 400 25px/1.42 var(--serif);
@@ -1629,8 +1558,8 @@ body {
  * column enough width rather than to let the content escape it: the columns
  * stack below the point where each one can still hold the drawing at the size
  * it rendered inside the old 1200px card. */
-.exc-cols .trace {
-  margin-top: 0;
+.exc-lead .trace {
+  margin-top: 26px;
 }
 
 /* ========================================================================
@@ -2325,22 +2254,19 @@ body {
   background: var(--green);
 }
 
-.exc-cols {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 52px;
-  padding: 34px 42px;
-  align-items: start;
+/* The card reads top to bottom now: the claim, the proof, then the detail.
+ * The two-column split existed to put the trace beside the prose, and with
+ * the trace above them both there is no second column left to fill — so the
+ * breakpoints that used to decide when the columns stopped paying are gone
+ * with them. The drawing gets the whole panel at every width. */
+.exc-lead {
+  padding: 34px 42px 0;
+  min-width: 0;
 }
 
-/* Derived, not chosen: the panel is the viewport less its gutters, each
- * column is half of that less 42px padding and half the 52px gap, and the
- * drawing wants ~700px to stay scannable. That lands just under 1730. */
-@media (max-width: 1730px) {
-  .exc-cols {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 34px;
-  }
+.exc-detail {
+  padding: 30px 42px 34px;
+  min-width: 0;
 }
 
 /* Label / body, the P0 measure. 130px of label because "How this was
@@ -2398,12 +2324,15 @@ body {
   color: var(--red-bright);
 }
 
+/* No measure cap. Text occupies only what it needs, so removing the cap does
+ * not stretch a short headline — it stops a 76-character sentence being
+ * folded into three lines while the right half of the card sits empty. */
 .exc-headline {
   font: 400 27px/1.4 var(--serif);
   color: var(--ink);
   text-wrap: pretty;
-  max-width: 22ch;
-  margin: 20px 0 24px;
+  max-width: none;
+  margin: 20px 0 0;
 }
 
 @media (max-width: 900px) {
@@ -2411,6 +2340,31 @@ body {
     font-size: 23px;
     max-width: none;
   }
+}
+
+/* The open card's identity strip doubles as its close control — same line you
+ * clicked to open it. Styled as text, because it is text; the affordance is
+ * that the whole strip lifts on hover. */
+.exc-close {
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: 0;
+  padding: 0 0 2px;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  border-bottom: 1px solid transparent;
+  transition: border-color 0.13s ease;
+}
+
+.exc-close:hover {
+  border-bottom-color: var(--rule);
+}
+
+.exc-close:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 3px;
 }
 
 /* --------------------------------------------- how this was decided */
@@ -2490,8 +2444,8 @@ body {
 /* ------------------------------------------------- the residual block */
 
 .residual-block {
-  margin-top: 20px;
-  padding: 22px 26px;
+  margin-top: 16px;
+  padding: 15px 26px;
   background: var(--red-panel);
   border-left: 3px solid var(--red);
 }
@@ -2505,8 +2459,8 @@ body {
 
 .residual-block .v {
   display: block;
-  margin-top: 8px;
-  font: 500 32px var(--mono);
+  margin-top: 5px;
+  font: 500 28px var(--mono);
   font-variant-numeric: tabular-nums;
   color: var(--red-bright);
 }
@@ -2625,14 +2579,40 @@ body {
 
 /* --------------------------------------------------------- P0: /review */
 
-.rv-keys {
-  text-align: right;
-  flex: none;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  font: 400 11.5px var(--mono);
-  color: var(--ink-muted);
+/* The review legend is the /exceptions triage panel, narrowed: two columns of
+ * two bindings rather than one column of three. Every cell holds exactly one
+ * keycap, so the caps form a true column and the labels start on a common
+ * left edge — which the old right-aligned list could not do, because "j k"
+ * was two caps wide and "approve" was one. */
+.rv-triage {
+  width: 244px;
+}
+
+.rv-keygrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  padding: 4px 16px 10px;
+  font: 400 12px var(--mono);
+  color: var(--ink-row);
+}
+
+.rv-keycell {
+  display: grid;
+  /* A fixed cap column, not auto: the caps are 1ch of very different glyphs
+     and an auto track would size each column to its own widest one. */
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 9px;
+  align-items: center;
+  padding: 8px 0;
+}
+
+/* Rules under the first row only — the second row is the panel's floor. */
+.rv-keycell:nth-child(-n + 2) {
+  border-bottom: 1px solid var(--rule-light);
+}
+
+.rv-keycell .cap {
+  justify-self: start;
 }
 
 /* Why this entry is in the queue at all. The queue's whole premise is that
@@ -2880,6 +2860,7 @@ body {
 .eval-banner {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 9px;
   padding: 12px var(--page-pad);
   background: var(--blue-darkest);
@@ -2891,6 +2872,45 @@ body {
 
 .eval-banner .dot {
   background: var(--blue-mid);
+}
+
+/* Sits at the far end of the dark strip, in the same red as "Run the eval"
+ * below — it is the same action, and giving the repeat of it a different
+ * colour made the page look like it offered two different things. Keeps the
+ * banner's mono type and size so it still belongs to the strip. */
+.eval-rerun {
+  margin-left: auto;
+  flex-shrink: 0;
+  white-space: nowrap;
+  padding: 6px 15px;
+  font: 600 10.5px var(--mono);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--red-ink);
+  background: var(--red);
+  border: 1px solid var(--red-edge);
+  border-radius: 2px;
+  cursor: pointer;
+  box-shadow: 0 1px 2px rgba(25, 23, 19, 0.2);
+  transition:
+    background 0.14s ease,
+    box-shadow 0.14s ease;
+}
+
+.eval-rerun:hover:not(:disabled) {
+  background: var(--red-bright);
+  box-shadow: 0 4px 10px rgba(25, 23, 19, 0.28);
+}
+
+.eval-rerun:focus-visible {
+  outline: 2px solid var(--red-bright);
+  outline-offset: 2px;
+}
+
+.eval-rerun:disabled {
+  cursor: default;
+  opacity: 0.72;
+  box-shadow: none;
 }
 
 .eval-banner .qual {
@@ -2959,6 +2979,30 @@ body {
   gap: 30px 46px;
   margin: 0 var(--page-pad);
   padding: 28px 0;
+}
+
+/* Only the carded pair tightens up: its panels supply their own padding, so
+ * the 46px gutter the bare-text pair needs would read as a gulf here. */
+.bm-pair:has(> .bm-card) {
+  gap: 20px;
+  align-items: stretch;
+}
+
+/* The run and the fee model. Each is a self-contained claim, so each gets an
+ * edge and a ground — the tint is barely there on purpose: it should separate
+ * the pair from the page without competing with the figures inside it. */
+.bm-card {
+  padding: 20px 24px 22px;
+  background: var(--paper-tint);
+  border: 1px solid var(--rule-tint);
+  border-radius: 3px;
+}
+
+/* Stretched to the taller of the two, the fee model's two short lines would
+ * strand in a tall box. Sit them under the label rather than in the middle of
+ * the empty space. */
+.bm-card > .bm-note:last-child {
+  margin-bottom: 0;
 }
 
 .bm-block {
