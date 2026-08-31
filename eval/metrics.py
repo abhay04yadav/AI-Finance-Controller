@@ -173,7 +173,16 @@ class Metrics:
     #: with a key and no cache fingerprints differently from one with the
     #: cache, while both agree on every figure in the report. That is the
     #: opposite of what §9.1 asks the fingerprint to prove.
-    PROVENANCE_FIELDS = ("llm_api_requests",)
+    #:
+    #: `dataset` is the same argument in its other form: it records WHERE the
+    #: inputs were read from, which is a fact about the machine and not about
+    #: the run. It cost us a real mismatch — Windows hands `evaluate` a
+    #: `data\seed42` and Linux a `data/seed42`, so the container and the
+    #: laptop fingerprinted differently on byte-identical results: same 60
+    #: records, same 48/48 and 11/11, same cost, every scored figure equal and
+    #: one path separator apart. Which dataset ran is already pinned by `seed`
+    #: and `scale`, both hashed, and by every scored figure downstream of them.
+    PROVENANCE_FIELDS = ("llm_api_requests", "dataset")
 
     def deterministic_fields(self) -> dict[str, Any]:
         skip = (*self.TIMING_FIELDS, *self.PROVENANCE_FIELDS)

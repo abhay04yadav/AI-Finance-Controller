@@ -85,7 +85,12 @@ def run_benchmark(dataset: Path, *, no_llm: bool = False) -> dict[str, Any]:
     wall_ms = (time.perf_counter() - t0) * 1000
 
     return {
-        "dataset": str(dataset),
+        # `metrics.dataset`, not `str(dataset)`: the metrics carry the
+        # POSIX-normalised form, so the container and a Windows laptop report
+        # the same string for the same dataset. The fingerprint no longer
+        # depends on it either way, but two payloads that differ only by a
+        # path separator invite the question it is there to settle.
+        "dataset": metrics.dataset,
         "seed": metrics.seed,
         "scale": metrics.scale,
         "no_llm": metrics.no_llm,

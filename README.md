@@ -545,10 +545,10 @@ Match precision        100.0%   (59/59 correct)   <- the number that matters
 Exception recall       100.0%   (10/10 that need a human)
 Auto-resolution         80.0%   (48 posted without a human)
 Genuine misses              1   RFND-5004 — CROSS_PERIOD_REFUND
-metrics fingerprint  c1ae52496e22
+metrics fingerprint  1aa6a0b91748
 ```
 
-**The fingerprint is the claim.** If yours reads `c1ae52496e22`, you reproduced this
+**The fingerprint is the claim.** If yours reads `1aa6a0b91748`, you reproduced this
 run exactly — same matches, same journal entries, same cash position. Nothing here is
 pinned, so pip resolves whatever is current; the figures above were last confirmed on a
 clean clone that pulled FastAPI 0.141, Pydantic 2.13 and pytest 9.1, all far newer than
@@ -892,7 +892,7 @@ Stated deliberately. A known limitation is a design boundary; an unstated one is
 - **The reported runs replay cached verdicts, not live ones.** L4's answers for the
   committed seeds ship in `adjudication/cache/`, content-addressed by prompt version and
   payload hash, which is what lets a judge with no credential reproduce
-  `c1ae52496e22` exactly. The report says which: *"LLM calls: 3, all from cache"*. A seed
+  `1aa6a0b91748` exactly. The report says which: *"LLM calls: 3, all from cache"*. A seed
   that was never generated misses the cache and calls for real — that is the check to run
   if you want to see the model work, and it is why the cache cannot stand in for the
   system. `python tasks.py generate --seed <any number>` then `eval` it.

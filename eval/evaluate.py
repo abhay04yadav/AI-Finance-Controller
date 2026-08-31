@@ -287,7 +287,11 @@ def evaluate(
         truth,
         result,
         settings=settings,
-        dataset=str(dataset),
+        # POSIX form regardless of host: the fingerprint no longer depends
+        # on this, but the report and the benchmark payload still show it,
+        # and `data\seed42` beside `data/seed42` invites exactly the
+        # question the fingerprint is meant to settle.
+        dataset=Path(dataset).as_posix(),
         no_llm=no_llm,
         elapsed_s=elapsed,
     )

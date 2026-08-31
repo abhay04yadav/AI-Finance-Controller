@@ -216,6 +216,32 @@ def test_fingerprint_excludes_timing() -> None:
     assert "throughput" not in metrics().deterministic_fields()
 
 
+def test_fingerprint_ignores_where_the_dataset_lived_on_disk() -> None:
+    """The same dataset read from a different path must hash the same.
+
+    This one shipped: the Windows laptop passed `evaluate` a backslash path
+    and the Linux container a `data/seed42`, so the two fingerprinted
+    differently on runs that agreed on every scored figure — same 60 records,
+    same 48/48 and 11/11, same cost, one path separator apart. A reader
+    comparing the deployed number against their own clone saw a mismatch that
+    meant nothing.
+
+    Which dataset ran is pinned by `seed` and `scale`, both hashed, and by
+    every figure downstream of them. The path is where the bytes were, which
+    is a fact about the machine.
+    """
+    posix = metrics(dataset="data/seed42")
+    windows = metrics(dataset=r"data\seed42")
+    absolute = metrics(dataset="/srv/app/data/seed42")
+
+    assert posix.fingerprint == windows.fingerprint == absolute.fingerprint
+    assert "dataset" not in posix.deterministic_fields()
+
+    # ...but which dataset it was still moves it, through seed and scale.
+    assert metrics(dataset="data/seed7", seed=7).fingerprint != posix.fingerprint
+    assert metrics(dataset="data/seed42-5000", scale=5000).fingerprint != posix.fingerprint
+
+
 def test_fingerprint_ignores_whether_a_verdict_came_from_cache_or_the_api() -> None:
     """Two runs that DECIDED the same thing must hash the same.
 
