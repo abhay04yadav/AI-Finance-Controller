@@ -80,14 +80,43 @@ export function TraceDiagram({ trace }: { trace: Trace }) {
   // Rows are spaced so the source column and the arithmetic column both fit
   // without either dictating the other. 58px is the smallest spacing at which
   // an id, an amount and a date stack legibly at these sizes.
-  const rowGap = 58;
-  const nodeTop = 56;
+  // A source row is normally two text lines — an id at 13px and an
+  // amount/date at 11.5px, 18 apart. A REJECTED row adds a third at +36, so
+  // rows are not a uniform pitch and the canvas cannot be sized by counting
+  // them: the old `nodes.length * rowGap` reserved two lines for every row,
+  // and the third line of an annotated one drew past the viewBox. It showed
+  // anyway — the svg is overflow:visible — landing on top of the footnote.
+  const rowGap = 40;
+  const nodeTop = 40;
+  const noteExtra = 14;
+  const annotated = (n: (typeof nodes)[number]) =>
+    Boolean(n.rejected && n.rejected_because);
+
+  const nodeY: number[] = [];
+  {
+    let y = nodeTop;
+    for (const n of nodes) {
+      nodeY.push(y);
+      y += rowGap + (annotated(n) ? noteExtra : 0);
+    }
+  }
+  // The lowest ink in the source column, measured rather than assumed.
+  const nodesBottom = nodes.length
+    ? Math.max(...nodes.map((n, i) => nodeY[i] + (annotated(n) ? 36 : 18) + 6))
+    : nodeTop;
   // Two columns with different row heights: source rows need 58px to stack an
   // id, an amount and a date; arithmetic lines need 26px. Sizing the canvas by
   // whichever column is LONGER in rows over-reserves badly when four short
   // steps sit beside two tall nodes, which is the common shape.
-  const stepGap = 26;
-  const hubY = Math.max(88, nodeTop + ((nodes.length - 1) * rowGap) / 2 - 10);
+  const stepGap = 20;
+  // The floor only matters for a one- or two-source trace. At 70 it pushed the
+  // hub BELOW the midpoint of a two-row column (which sits at 60), so the
+  // spine sagged away from the rows feeding it and the canvas paid for the
+  // difference.
+  const hubY = Math.max(
+    58,
+    (nodeY[0] ?? nodeTop) + ((nodeY.at(-1) ?? nodeTop) - (nodeY[0] ?? nodeTop)) / 2 - 10,
+  );
   const spineY = hubY + 18;
 
   // The arithmetic is CENTRED on the spine, not hung from the top of the
@@ -98,9 +127,9 @@ export function TraceDiagram({ trace }: { trace: Trace }) {
   const mathTop = spineY - ((steps.length - 1) * stepGap) / 2;
 
   const height = Math.max(
-    196,
-    nodeTop + nodes.length * rowGap - 10,
-    mathTop + steps.length * stepGap + 30,
+    150,
+    nodesBottom,
+    mathTop + steps.length * stepGap + 22,
   );
 
   // The schedule, in seconds, derived from the shape of THIS trace rather
@@ -108,22 +137,45 @@ export function TraceDiagram({ trace }: { trace: Trace }) {
   // five-source trace needs to gather. Stages overlap slightly on purpose:
   // butted end to end the diagram reads as five separate events instead of
   // one continuous movement.
-  const lastLink = 0.07 + Math.max(nodes.length - 1, 0) * 0.032;
+  // One knob for the whole assembly: every trace finishes at ASSEMBLY_S no
+  // matter how many sources or arithmetic steps it happens to have. The raw
+  // schedule below is relative — its own length depends on the data — so the
+  // scale factor is computed from where it actually ends rather than from a
+  // constant, which is why a two-source row and a four-source row used to
+  // finish 150ms apart.
+  //
+  // The factor reaches the CSS too, through --t-scale, so the per-element
+  // durations stretch with the delays. Scaling delays alone would space the
+  // beats further apart while each one still snapped in at its old speed.
+  const ASSEMBLY_S = 2.6;
+
+  const rawLastLink = 0.07 + Math.max(nodes.length - 1, 0) * 0.032;
+  const rawToOut = rawLastLink + 0.6 + steps.length * 0.042;
+  // The arrow's label starts 0.16 after the arrow and runs the .t-in duration,
+  // which outlasts the outcome box (starts 0.1 after, runs .t-pop). Ending the
+  // clock at the box would let the label finish past ASSEMBLY_S.
+  const rawEnd = Math.max(rawToOut + 0.16 + 0.26, rawToOut + 0.1 + 0.28);
+  const k = ASSEMBLY_S / rawEnd;
+
+  const lastLink = rawLastLink * k;
   const at = {
-    node: (i: number) => 0.02 + i * 0.032,
-    rail: 0.07,
-    link: (i: number) => 0.07 + i * 0.032,
-    toHub: lastLink + 0.22,
-    hub: lastLink + 0.3,
-    toMath: lastLink + 0.46,
-    step: (i: number) => lastLink + 0.6 + i * 0.042,
-    toOut: lastLink + 0.6 + steps.length * 0.042,
-    out: lastLink + 0.7 + steps.length * 0.042,
+    node: (i: number) => (0.02 + i * 0.032) * k,
+    rail: 0.07 * k,
+    link: (i: number) => (0.07 + i * 0.032) * k,
+    toHub: lastLink + 0.22 * k,
+    hub: lastLink + 0.3 * k,
+    toMath: lastLink + 0.46 * k,
+    step: (i: number) => lastLink + (0.6 + i * 0.042) * k,
+    toOut: rawToOut * k,
+    out: (rawToOut + 0.1) * k,
   };
   const delay = (s: number) => ({ animationDelay: `${s.toFixed(3)}s` });
 
   return (
-    <div className="trace">
+    <div
+      className="trace"
+      style={{ ["--t-scale" as string]: k.toFixed(3) }}
+    >
       <div className="trace-head">
         <span className="label-sm">Reconciliation trace</span>
         {/* Three outcomes, not two. Branching on the residual alone put a
@@ -154,7 +206,7 @@ export function TraceDiagram({ trace }: { trace: Trace }) {
           {/* -------------------------------------------------- source rows */}
           <g fontFamily="var(--mono)">
             {nodes.map((n, i) => {
-              const y = nodeTop + i * rowGap;
+              const y = nodeY[i];
               const dim = n.rejected;
               return (
                 <g key={n.id} className="t-in" style={delay(at.node(i))}>
@@ -194,7 +246,7 @@ export function TraceDiagram({ trace }: { trace: Trace }) {
               soon as there are more than two, which is most of them. */}
           {(() => {
             const rail = RAIL;
-            const ys = nodes.map((_, i) => nodeTop + i * rowGap - 5);
+            const ys = nodes.map((_, i) => nodeY[i] - 5);
             const top = Math.min(...ys, spineY);
             const bottom = Math.max(...ys, spineY);
             const solid = nodes.some((n) => !n.rejected);
@@ -314,7 +366,7 @@ export function TraceDiagram({ trace }: { trace: Trace }) {
           <path
             d={`M${OUT_X} ${spineY} l-9 -4.5 v9 z`}
             className="t-in"
-            style={delay(at.toOut + 0.16)}
+            style={delay(at.toOut + 0.16 * k)}
             fill="var(--ink)"
           />
 
@@ -364,16 +416,22 @@ export function TraceDiagram({ trace }: { trace: Trace }) {
                       fits(NOTE_W, 11),
                     )}
                   </text>
+                  {/* Both rules sit in the GAP between two rows, so both
+                      are derived from stepGap. The residual's was a literal
+                      -20, tuned when the gap was 26; at 20 it landed exactly
+                      on the previous row's baseline and struck the text
+                      through. Anything hard-coded here breaks the next time
+                      the rhythm changes. */}
                   {subtotal && (
                     <path
-                      d={`M${MATH_X} ${y + 8} H${BLOCK_R}`}
+                      d={`M${MATH_X} ${y + stepGap / 2 - 2} H${BLOCK_R}`}
                       stroke="var(--rule-key)"
                       strokeWidth="1"
                     />
                   )}
                   {residual && (
                     <path
-                      d={`M${MATH_X} ${y - 20} H${BLOCK_R}`}
+                      d={`M${MATH_X} ${y - stepGap / 2 - 1} H${BLOCK_R}`}
                       stroke="var(--red-rule)"
                       strokeWidth="1"
                     />

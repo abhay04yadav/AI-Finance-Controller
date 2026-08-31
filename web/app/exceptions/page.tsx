@@ -73,7 +73,10 @@ function Exceptions() {
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<string | null>(null);
   const [sortBy, setSortBy] = useState<SortKey>("amount");
-  const [cursor, setCursor] = useState(0);
+  // null = nothing open, and that is how the page arrives. A ledger that
+  // opens with a card already expanded answers a question nobody asked and
+  // pushes the rest of the list below the fold.
+  const [cursor, setCursor] = useState<number | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [tour, setTour] = useState(false);
 
@@ -112,6 +115,9 @@ function Exceptions() {
       settled.current = true;
       return;
     }
+    // Closing a card leaves the reader where they were. Only an OPEN needs
+    // the page to move.
+    if (cursor === null) return;
     const panel = document.querySelector<HTMLElement>(".exc-panel");
     if (!panel) return;
     const bar = document.querySelector<HTMLElement>(".topbar");
@@ -144,10 +150,19 @@ function Exceptions() {
   useEffect(() => {
     function onKey(ev: KeyboardEvent) {
       if (ev.target instanceof HTMLInputElement || tour) return;
-      if (ev.key === "j") setCursor((c) => Math.min(c + 1, rows.length - 1));
-      if (ev.key === "k") setCursor((c) => Math.max(c - 1, 0));
+      // From nothing open, j takes the top of the list and k the bottom.
+      if (ev.key === "j") {
+        setCursor((c) => (c === null ? 0 : Math.min(c + 1, rows.length - 1)));
+      }
+      if (ev.key === "k") {
+        setCursor((c) =>
+          c === null ? rows.length - 1 : Math.max(c - 1, 0),
+        );
+      }
+      // Escape closes, which is the keyboard half of clicking an open row.
+      if (ev.key === "Escape") setCursor(null);
       const n = Number.parseInt(ev.key, 10);
-      if (n >= 1 && n <= 3) {
+      if (n >= 1 && n <= 3 && cursor !== null) {
         const row = rows[cursor];
         const action = row?.actions[n - 1];
         if (row && action && !row.action_state) void act(row.ref, action.code);
@@ -376,11 +391,14 @@ function Exceptions() {
           <Row
             key={row.ref}
             row={row}
-            /* One open at a time. The cursor IS the disclosure state, so the
-               two can never disagree and j/k walks the open card down. */
+            /* One open at a time, or none. The cursor IS the disclosure
+               state, so the two can never disagree and j/k walks the open
+               card down the list. */
             expanded={i === cursor}
             busy={busy === row.ref}
-            onFocus={() => setCursor(i)}
+            /* Clicking the open card closes it. Clicking a different row
+               moves the disclosure there. */
+            onFocus={() => setCursor((c) => (c === i ? null : i))}
             onAct={(code) => act(row.ref, code)}
             onUndo={(code) => undo(row.ref, code)}
           />
@@ -617,37 +635,69 @@ function Row({
   const residual = t?.residual_paise ?? 0;
 
   return (
-    <div className="row row-open" onClick={onFocus}>
+    <div className="row row-open">
       <div className={`exc-panel ${acted ? "exc-panel-done" : ""}`}>
-        <div className="exc-cols">
-          {/* ------------------------------------------- left: the answer */}
+        {/* The claim, then the proof, then the detail. The headline is the
+            one sentence a controller has to read, so it gets the full width
+            rather than 55% of it; the trace is the evidence for that
+            sentence, so it comes next, before the prose that elaborates. */}
+        <div className="exc-lead">
+          {/* The identity strip is the close affordance — the same line you
+                clicked to open it. The panel as a whole is NOT clickable:
+                everything inside it is prose to read or a control to press,
+                and a card that collapses when you click its own headline is
+                a card you cannot read. */}
+          <button
+            type="button"
+            className="exc-close"
+            onClick={onFocus}
+            aria-expanded="true"
+            title="Close this card"
+            style={{
+              display: "flex",
+              alignItems: "baseline",
+              gap: 13,
+              flexWrap: "wrap",
+            }}
+          >
+            <span className="row-title">{row.title}</span>
+            <span className="row-code">{row.reason_code}</span>
+            <span className="row-ref">
+              <Gloss term="UTR">{row.ref.split("-")[0]}</Gloss>
+              {row.ref.slice(row.ref.indexOf("-"))}
+              {row.value_date ? ` · value ${shortDate(row.value_date)}` : ""}
+              {row.age_days !== null && (
+                <span className="row-age"> · {row.age_days}d</span>
+              )}
+            </span>
+          </button>
+
+          <div className="exc-headline">
+            {acted && row.action_state
+              ? row.action_state.detail
+              : row.headline}
+          </div>
+
+          {/* Three cases, not two. A row with no trace that nobody has acted
+              on — an auto-refund explains itself — used to be told it had
+              been acted on and its trace was in the audit trail, which was
+              simply untrue. It now says nothing, because there is nothing
+              to reconstruct. */}
+          {acted ? (
+            <div className="prose-sm" style={{ marginTop: 18 }}>
+              This row has been acted on; the trace it was decided from is in
+              the audit trail.
+            </div>
+          ) : row.trace ? (
+            <>
+              <TraceDiagram trace={row.trace} />
+              <Residual trace={row.trace} />
+            </>
+          ) : null}
+        </div>
+
+        <div className="exc-detail">
           <div style={{ minWidth: 0 }}>
-            <div
-              style={{
-                display: "flex",
-                alignItems: "baseline",
-                gap: 13,
-                flexWrap: "wrap",
-              }}
-            >
-              <span className="row-title">{row.title}</span>
-              <span className="row-code">{row.reason_code}</span>
-              <span className="row-ref">
-                <Gloss term="UTR">{row.ref.split("-")[0]}</Gloss>
-                {row.ref.slice(row.ref.indexOf("-"))}
-                {row.value_date ? ` · value ${shortDate(row.value_date)}` : ""}
-                {row.age_days !== null && (
-                  <span className="row-age"> · {row.age_days}d</span>
-                )}
-              </span>
-            </div>
-
-            <div className="exc-headline">
-              {acted && row.action_state
-                ? row.action_state.detail
-                : row.headline}
-            </div>
-
             {!acted && (
               <>
                 <div className="field">
@@ -833,21 +883,6 @@ function Row({
                   </div>
                 </div>
               </>
-            )}
-          </div>
-
-          {/* --------------------------------------- right: the arithmetic */}
-          <div style={{ minWidth: 0 }}>
-            {!acted && row.trace ? (
-              <>
-                <TraceDiagram trace={row.trace} />
-                <Residual trace={row.trace} />
-              </>
-            ) : (
-              <div className="prose-sm">
-                This row has been acted on; the trace it was decided from is in
-                the audit trail.
-              </div>
             )}
           </div>
         </div>
