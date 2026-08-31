@@ -106,6 +106,27 @@ function Benchmark() {
             · synthetic dataset, not production financial data
           </span>
         </span>
+
+        {/* Re-run lives up here once there is something to re-run. The claim
+            this page makes is that the same seed gives the same fingerprint,
+            and that claim is only worth anything if checking it is one click
+            away from the result rather than a scroll back to the top. */}
+        {data && (
+          <button
+            type="button"
+            className="eval-rerun"
+            disabled={running}
+            onClick={run}
+          >
+            {running ? (
+              <>
+                running <span className="creepdot">_</span>
+              </>
+            ) : (
+              "re-run"
+            )}
+          </button>
+        )}
       </div>
 
       <div className="eval-head">
@@ -394,7 +415,12 @@ function Benchmark() {
 
           {/* ------------------------------- the run, and the fee model */}
           <div className="bm-block bm-pair">
-            <div>
+            {/* Two panels, not two columns of loose text. Both are claims a
+                reader is invited to check rather than take — the same seed
+                gives the same fingerprint, the fee rate was learned and not
+                configured — so each gets a boundary and a ground of its own
+                instead of floating on the page. */}
+            <div className="bm-card">
               <div className="label-sm">Run</div>
               <div className="kv" style={{ marginTop: 12, fontSize: 12.5 }}>
                 <span className="k">fingerprint</span>
@@ -436,7 +462,7 @@ function Benchmark() {
               </div>
             </div>
 
-            <div>
+            <div className="bm-card">
               <div className="label-sm">Fee model</div>
               <div
                 style={{
