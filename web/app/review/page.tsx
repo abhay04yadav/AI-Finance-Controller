@@ -171,21 +171,26 @@ function Review() {
               saying yes to the bookkeeping, not redoing the maths.
             </div>
           </div>
-          <div className="rv-keys">
-            {[
-              ["↵", "approve"],
-              ["⌫", "reject"],
-              ["j k", "next / prev"],
-            ].map(([cap, what]) => (
-              <div className="keyrow" key={what} style={{ justifyContent: "flex-end" }}>
-                {cap.split(" ").map((c) => (
-                  <span className="cap" key={c}>
-                    {c}
-                  </span>
-                ))}
-                <span>{what}</span>
-              </div>
-            ))}
+          {/* The same panel /exceptions uses, because it is the same promise:
+              this queue is worked from the keyboard. Four bindings, one key
+              each, on a 2x2 grid — the old list put two caps on the "next /
+              prev" line and one on the others, so the labels never lined up
+              with each other. */}
+          <div className="triage rv-triage">
+            <div className="triage-head">Keyboard triage</div>
+            <div className="rv-keygrid">
+              {[
+                ["↵", "approve"],
+                ["j", "next"],
+                ["⌫", "reject"],
+                ["k", "prev"],
+              ].map(([cap, what]) => (
+                <div className="rv-keycell" key={what}>
+                  <span className="cap">{cap}</span>
+                  <span>{what}</span>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
 
