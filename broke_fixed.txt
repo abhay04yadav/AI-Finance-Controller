@@ -1,0 +1,455 @@
+BROKE / FIXED — AI Finance Controller
+Working log for the submission question: "What broke, and how you got out."
+Guide §0.1. Appended at the moment each fix lands, never reconstructed later.
+
+Committed with the submission. Written as it happened, not reconstructed
+afterwards — the dates, the numbers and the test names are all checkable
+against the history.
+
+────────────────────────────────────────────────────────────────────────
+THE BAR FOR AN ENTRY  (at least one must be true)
+  · cost more than 30 minutes to diagnose
+  · root cause changed a design decision (threshold, algorithm, data model)
+  · silently wrong — tests passed, output looked fine, answer was incorrect
+  · a measured number moved because of the fix
+
+NEVER LOG
+  typos · import errors · missing deps · syntax errors · forgotten saves
+  environment setup · wrong file path · package version mismatches
+
+VOLUME   10 entries maximum for the whole build. Six good ones is the goal.
+         Approaching 15 means the bar is being applied too loosely — cut.
+
+FORMAT   symptom → cause → fix → evidence, tagged with gate and §.
+         EVIDENCE must carry a number, a test name, or a before/after
+         metric. "Fixed it" is not an answer.
+────────────────────────────────────────────────────────────────────────
+
+
+ENTRIES
+=======
+
+────────────────────────────────────────────────────────
+#1 · Gate 11 (L4 LLM adjudication) · §4.4, §7.3
+SYMPTOM   Nothing visible. L4 wired up, guardrails green, budget at
+          0.5% of records. Then, before trusting any of it, I compared
+          the candidates L3 hands to L4 on seed 42 against truth.json —
+          and all five were wrong. Not "the model might pick badly":
+          every option the LLM would be offered is a wrong answer.
+CAUSE     The true combination for UTR-39450273 reconstructs to
+          2,560,006 paise in gross-equivalent space against a back-solved
+          target of 2,560,059 — 53 paise adrift, with the rounding
+          tolerance set to 50. It is excluded before the solver enumerates
+          anything, so no number of candidates would have contained it.
+          (The five it does find sit 30-47 paise the other side of the
+          target and are all inside tolerance.) This is the same case as
+          the one genuine miss recorded at gate 10, RFND-5004.
+IMPACT    §4.4's job A as written is a forced choice: `selected` must be
+          a candidate id. A model asked to pick the best of five wrong
+          options picks one, with a reason that reads well. That becomes
+          a match at 0.94 confidence and drops match precision from
+          100.0% to 98.3% — a wrong journal entry, produced by the one
+          layer the whole design keeps on a leash.
+FIX       Added NO_SELECTION ("NONE") as a first-class verdict: the
+          adjudicator may answer "none of these is supported", and the
+          prompt tells it when to. The guardrail accepts it (there is no
+          combination to re-add, so the arithmetic check is skipped) and
+          it still has to justify itself. An abstention produces no
+          match and leaves the credit an honest exception. The payload
+          also now carries `candidates_are_exhaustive`, false when the
+          solver stopped at its cap, so the model is told when the right
+          answer may simply not be on the list.
+NOT DONE  Did not widen the rounding tolerance from 50 to 60 paise. It
+          would resolve this case and lift anomaly resolution to 100%,
+          and it would be tuning a constant to the answer key of one
+          seed. ₹0.50 is the defensible tolerance; the miss stays.
+EVIDENCE  truth   ORD-1035/1097/1159/1221/1283/1345/1407/1469 + RFND-5004
+                  -> 2,560,006 paise, drift -53
+          A (11 rows) 2,560,089  drift +30    wrong
+          B  (9 rows) 2,560,100  drift +41    wrong
+          C  (8 rows) 2,560,106  drift +47    wrong
+          D  (9 rows) 2,560,106  drift +47    wrong
+          E (10 rows) 2,560,106  drift +47    wrong
+────────────────────────────────────────────────────────
+
+────────────────────────────────────────────────────────
+#2 · Gate 12 (UI) · §1.6, §4.5, §8.4
+SYMPTOM   Nothing looked wrong. Approve an entry on /review and the books
+          screen still rendered, still tied to the rupee, still showed a
+          green TIES TO THE RUPEE tick. Only the audit trail moved:
+          "Approved in review" went 1 -> 2. Revenue recognised, cash in
+          suspense, pending review and the rounding write-off all sat at
+          the figures they had before the approval.
+CAUSE     /books read `result.cash_position` — the position the PIPELINE
+          computed during the run, before any human touched anything.
+          Approving a queued entry posts a real journal entry into
+          `run.repository` (the response hands back its number, JE-0066),
+          but nothing recomputed the position from the ledger afterwards.
+          So the screen was reporting a state that stopped being true the
+          moment a controller did their job, and it kept a green tick
+          while doing it because the STALE addends still summed to the
+          STALE total.
+IMPACT    This screen's headline is "Every rupee that moved is on one of
+          three lines, and the three lines add up." After one approval
+          they were three lines about a run that no longer existed. The
+          failure mode is the dangerous one: not a crash, not a visibly
+          broken number, just a plausible figure that had quietly stopped
+          being current. A controller approving a morning's queue would
+          have watched the books say nothing changed.
+FIX       `current_position()` in api/routes/books.py recomputes from
+          `run.repository.all()`, which holds every entry the pipeline
+          posted AND every entry a person has posted since. Pending and
+          exception counts come from the same decision state /review and
+          /exceptions filter on, so all three screens answer with one
+          number instead of three that agree only until someone acts.
+EVIDENCE  seed 99, approving UTR-46792649 (carries a 1-paise rounding
+          line, bank credit Rs 24,223.38):
+                            before        after       delta
+            review queue        15           14          -1
+            pending review  30,174,204   27,751,866  -2,422,338
+            in suspense     39,122,220   36,699,882  -2,422,338
+            rounding write-off       0            1          +1
+            revenue         97,358,000   99,833,800  +2,475,800
+            tie-out ties          True         True
+          Both movements are exact: pending and suspense fall by the
+          bank credit, revenue rises by the entry's receivable credit,
+          and the tie-out still holds afterwards. Before the fix every
+          one of those five figures was unchanged.
+          Test: test_books_report_the_ledger_now_not_the_pipeline_snapshot
+          It asserts each delta to the paise and re-adds the addends.
+FOUND BY  Auditing every screen against two seeds and asking of each
+          figure "what would have to move for this to be wrong". The
+          rounding write-off read 0.00 on all eight datasets, which was
+          the thread: entries in the review queue carry rounding lines of
+          1-28 paise, so a books total of exactly zero meant those
+          entries had never reached the books.
+────────────────────────────────────────────────────────
+
+────────────────────────────────────────────────────────
+#3 · Gate 2 (generator) · §6.2, §6.3
+SYMPTOM   At --scale 5000 the dataset contained only 4 of the 8 planted
+          failure modes: DUPLICATE_UTR, HOLIDAY_SHIFT, MISSING_IN_LEDGER
+          and ROUNDING_DRIFT were all zero. Self-validation still printed
+          "passed". At --scale 50 and 500 all 8 were present, so the bug
+          only appeared at the scale used for the demo run.
+CAUSE     Every injector claimed a whole settlement batch, and §6.2 states
+          all ratios as a share of "records". That denominator is right for
+          a ledger-row anomaly and wrong for a bank-row one: a duplicated
+          UTR is a property of a settlement, not of the orders inside it.
+          Orders-per-batch grows with scale (8 at 500, 42 at 5000) while
+          batch count is capped, so at 5000 the injectors collectively
+          wanted 230 batch claims against 120 existing batches. The first
+          four consumed the pool and the last four silently got nothing.
+FIX       Each injector now declares a `unit` — "order" or "batch" — and
+          its ratio is taken against that unit. Order-level injectors claim
+          only the order, not its batch. Added validate.py check 7:
+          the set of planted types must equal the registry, so a starved
+          injector fails the build instead of shipping quietly.
+EVIDENCE  scale 5000: 4/8 modes and 120 exceptions -> 8/8 modes and 160
+          exceptions. New test test_validation_catches_a_missing_failure_mode
+          fails against the old validator and passes against the new one.
+          test_all_eight_failure_modes_appear now runs at scales 50/250/500.
+────────────────────────────────────────────────────────
+
+────────────────────────────────────────────────────────
+#4 · Gate 7 (L3 subset matcher) · §4.3c, §9.1
+SYMPTOM   Five consecutive evals of the same seed on the same dataset
+          gave two different answers: 107 matches on one run, 106 on the
+          next four, with two different metrics fingerprints. Nothing in
+          the data or the code changed between runs.
+CAUSE     The subset solver bounded its work with a wall-clock budget
+          (budget_ms=50), as §4.3c specifies. How many branches it
+          explores before the deadline therefore depends on how busy the
+          machine is, so a credit that solves on an idle run goes
+          unexplained on a loaded one. §9.1 requires two runs to produce
+          identical metrics, and a judge who reruns the demo and sees a
+          different number stops trusting the rest of the screen.
+FIX       Bounded in NODES instead of milliseconds (DEFAULT_MAX_NODES =
+          40_000, calibrated at ~875 nodes/ms so it stays inside the
+          100 ms per credit §4.3 allows). Same purpose, reproducible.
+          Removed the clock from the meet-in-the-middle path too.
+EVIDENCE  Five runs: 2 distinct fingerprints before, 1 after. Related
+          finding while measuring: the old clock was checked only every
+          2048 nodes, so each sibling branch ran on after the deadline —
+          a 50 ms budget measured 801 ms. Made the stop sticky, 801 -> 62 ms.
+────────────────────────────────────────────────────────
+
+────────────────────────────────────────────────────────
+#5 · Gate 12 (UI) · §8.1, §8.2
+SYMPTOM   The home screen's headline read "Rs 1,50,918.37 across 9
+          exceptions". Two pairs of rows carried identical amounts,
+          identical UTRs and — because the running-balance map was
+          keyed by ref — identical open balances, so the third column
+          showed the same figure twice and then jumped.
+CAUSE     Two separate defects stacked on one another.
+          (a) One credit was raising TWO exceptions. A settlement whose
+              orders are absent from the ledger trips the coverage check
+              (MISSING_IN_LEDGER) and then trips L3 (AMOUNT_MISMATCH),
+              which cannot explain the credit precisely BECAUSE the
+              orders are missing. Both sentences are true; showing both
+              puts one problem on two cards. Since the header sums the
+              cards, it also counted the money twice.
+          (b) The open-balance column was keyed by exception ref, so the
+              two cards sharing a ref overwrote each other's balance.
+IMPACT    The biggest number on the home screen was overstated by
+          Rs 41,959.94 — 28% of what it claimed — and the count said 9
+          where there were 7 problems. /books and /exceptions would also
+          have disagreed with each other once the dedupe landed on one
+          screen only.
+FIX       (a) A precedence ordering over reason codes in
+              `core/reason_codes.py`: root cause beats symptom, lower
+              number wins, AMOUNT_MISMATCH last because it is true
+              whenever anything else is. The orchestrator collapses
+              findings that share a ref and folds the losers into the
+              survivor's WHY ("Also raised as AMOUNT_MISMATCH, which
+              follows from this and is not a separate problem"), so
+              nothing is silently dropped. Applied in the PIPELINE, not
+              the API, so the eval, the endpoints and the UI all see one
+              card.
+          (b) The balance column is keyed by position, and the cash
+              position's exception line is recomputed from the deduped
+              list so the two screens cannot drift apart.
+EVIDENCE  before  9 cards, Rs 1,50,918.37, two rows both showing
+                  77,428.71 then jumping to 35,468.77
+          after   7 cards, Rs 1,08,958.43, column descends
+                  1,08,958.43 -> 83,910.65 -> 59,328.19 -> 35,468.77 ->
+                  17,368.25 -> 5,244.00 -> 2,559.00 -> Cleared 0.00
+          metrics unchanged (precision 100.0%, rate 98.3%, 1 genuine
+          miss); books fingerprint moved e3bbe3bd7860 -> 64b70921d02f
+          because the exception line is part of it, which is correct.
+────────────────────────────────────────────────────────
+
+────────────────────────────────────────────────────────
+#6 · Gate 12 (UI) · §4.5, §8.4
+SYMPTOM   /review's header said "Rs 2,43,834.28 · 11 entries" while
+          /books said "Pending review 11 entries Rs 2,36,890.06". Same
+          eleven entries, two different totals, on two screens a judge
+          would open one after the other.
+CAUSE     /review summed `prepared_entry.total_debits`, which is the
+          whole entry — bank + gateway fee + GST + rounding. /books
+          reports the BANK line only, which is the cash that actually
+          lands if the entry is approved. Both are real numbers; only
+          one answers "how much is awaiting approval".
+FIX       `cash_awaiting()` in api/routes/review.py, using
+          `amount_for(Account.BANK)`. The entry's own total is still
+          shown, on the entry's own footer, where it is the right answer.
+EVIDENCE  Rs 2,43,834.28 -> Rs 2,36,890.06, and a test asserting the two
+          endpoints agree on both seeds.
+          The gap was Rs 6,944.22, exactly the fee and GST on those 11.
+────────────────────────────────────────────────────────
+
+────────────────────────────────────────────────────────
+#7 · Gate 11/12 (CI) · §4.4, §9.9
+SYMPTOM   Two consecutive red builds on GitHub. Everything passed
+          locally — 700 tests, ruff, mypy, layering, drift — and the
+          same commits failed in CI within 40 seconds.
+CAUSE     Three separate defects, none of which a local run could
+          have found, because a local run had things CI does not.
+          (a) `adjudication/llm_adjudicator._ask()` opened with a bare
+              `import anthropic`, purely so two exception classes could
+              be named in `except` clauses. That made the SDK a hard
+              requirement of the CODE PATH rather than of the network:
+              21 tests that inject a FAKE client still needed it. It
+              also silently revoked §4.4's contract that `anthropic` is
+              an optional extra. Locally the SDK was installed, so the
+              import always succeeded.
+          (b) `fastapi.testclient` refuses to import without `httpx2`,
+              which was never declared in the `dev` extra. It was
+              present on my machine only because the `llm` extra pulls
+              it in — so the whole of tests/integration/test_api.py
+              failed at COLLECTION in CI and passed locally.
+          (c) `_load_env()` was appended to eval/evaluate.py BELOW the
+              `if __name__ == "__main__": raise SystemExit(main())`
+              guard, so `main()` ran before the function existed.
+              `make eval` was broken in the committed tree and no test
+              covered it, because no CI step ever invoked the CLI.
+FIX       (a) `_transport_errors()` returns the SDK exception classes,
+              or an empty tuple when the SDK is absent — which is
+              correct rather than lenient: with no SDK there are no SDK
+              errors, and anything an injected transport raises should
+              propagate as the bug it is. CI keeps installing `.[dev]`
+              WITHOUT the llm extra, deliberately, because that is what
+              caught this.
+          (b) `httpx2` added to the dev extra.
+          (c) Definition moved above the guard.
+ALSO     CI was generating no datasets, so 27 integration tests SKIPPED
+          silently, drift check 6 had nothing to read, and the eval CLI
+          was never executed. Added a generate step and enabled the eval
+          regression gate the workflow had carried commented out since
+          gate 3 — that step is the only one that runs the command a
+          judge types, and it is what would have caught (c). Added mypy
+          and a second job that typechecks, builds and audits the web
+          app.
+EVIDENCE  Reproduced by exporting the tracked tree to a clean directory
+          and installing `.[dev]` alone into a fresh venv — no data/,
+          no .env, no anthropic, no playwright.
+          before  1 collection error, then 21 failures, then a broken
+                  eval CLI
+          after   700 passed, 0 skipped, every step green, and the web
+                  job green at 0 vulnerabilities
+────────────────────────────────────────────────────────
+
+────────────────────────────────────────────────────────
+#8 · Gate 12 (UI) · §2.5, §7.4, §8.4
+SYMPTOM   The confidence-calibration chart on /benchmark labelled its
+          third band "0.70 - 0.85 · exception". Four bands, four
+          plausible labels, nothing visibly wrong — and the band was
+          usually empty, so there was rarely a bar next to the wrong
+          word.
+CAUSE     `bandRole()` in the benchmark page decided each label from
+          constants compiled into the frontend — `>= 0.95` auto-post,
+          `>= 0.85` review, else exception — and ignored the payload
+          argument it was handed. The run's actual review floor is
+          `review_threshold = 0.70` (core/config.py), so every match
+          from 0.70 up is routed to a PERSON. The chart was telling a
+          reader that money went to the exception list instead.
+          Two things made it survive review. The function's own docstring
+          claimed the labels came "from the run's own thresholds rather
+          than from constants written here", which is the opposite of
+          what the body did. And the benchmark payload carried no
+          thresholds at all, so the frontend could not have read the
+          policy even if it had tried to.
+IMPACT    This chart is the page's calibration evidence — the argument
+          that the confidence numbers mean something. A band mislabelled
+          with the wrong routing destination misstates who is responsible
+          for that money, on the one screen whose job is to be checkable.
+          Silent in the ordinary way: no error, no missing figure, just a
+          word that had quietly stopped matching the policy.
+FIX       `/api/benchmark` now returns `auto_post_threshold` and
+          `review_threshold`, read off the same `Settings` object
+          `evaluate()` is given rather than restated, and `bandRole()`
+          reads them. Added a line of copy under the chart, because the
+          honest version raises its own question: two of the four edges
+          are policy (0.95 posts without asking, 0.70 stops guessing) and
+          0.85 is a reporting-only split of the review band so its
+          confident half can be read against the rest. Nothing is routed
+          on 0.85, and now the screen says so instead of leaving a judge
+          to ask.
+EVIDENCE  rendered band labels, before -> after
+            0.95 - 1.00 · auto-post      0.95 - 1.00 · auto-post
+            0.85 - 0.95 · review         0.85 - 0.95 · review
+            0.70 - 0.85 · EXCEPTION      0.70 - 0.85 · REVIEW
+            below 0.70  · exception      below 0.70  · exception
+          Test: test_benchmark_reports_the_thresholds_its_bands_are_
+          labelled_from — asserts the payload's thresholds equal the
+          run's Settings, and that both policy edges are also band edges,
+          since a band straddling a routing boundary could not carry one
+          correct label.
+FOUND BY  Review, not a test. The design mock specified a 0.85/0.95 band
+          while the live app routes on 0.70/0.95, and the question "where
+          did 0.85 come from, then" had no good answer — which is what
+          exposed that the chart was deriving routing labels from
+          reporting edges.
+────────────────────────────────────────────────────────
+
+#9 · Gate 3 (eval reproducibility) · §9.1
+SYMPTOM   The deployed benchmark screen reported fingerprint
+          d91b6bd80ffc. The same seed, on the same commit, on the
+          author's laptop reported c1ae52496e22. Both agreed on every
+          other figure: 60 records scored, 48/48 auto-post, 11/11
+          subset sum, same cost, same calibration bands.
+CAUSE     `Metrics.deterministic_fields()` skipped timing and
+          `llm_api_requests` and hashed everything else — including
+          `dataset`, which is a filesystem path. Windows handed
+          `evaluate()` a `data\seed42`; the Linux container handed it
+          a `data/seed42`. One separator, an entirely different
+          SHA-256.
+IMPACT    The fingerprint IS the reproducibility claim: the README
+          tells a reader that matching it means they reproduced the run
+          exactly. A judge cloning on macOS or Linux and comparing
+          against a number generated on Windows would have seen a
+          mismatch that meant nothing — on the one artefact whose
+          entire job is to mean something.
+          Second time this class landed. `llm_api_requests` had already
+          been excluded for the same reason: it recorded how the answer
+          was obtained, not what was decided. A path records where the
+          bytes were, which is the same mistake wearing different
+          clothes.
+FIX       `dataset` joins PROVENANCE_FIELDS. Which dataset ran is
+          already pinned by `seed` and `scale`, both hashed, and by
+          every scored figure downstream of them. Also normalised to
+          POSIX for display, and `/api/benchmark` now returns
+          `metrics.dataset` instead of building its own `str(dataset)`,
+          so the two surfaces cannot print the path differently either.
+EVIDENCE  Field-by-field diff of the deployed payload against the local
+          one: 5 fields differed. Three were elapsed_s, throughput and
+          wall_ms, already excluded as timing. The fourth was `dataset`.
+          The fifth was the fingerprint itself. Every scored figure was
+          equal.
+          After: local CLI, local API and the deployed container all
+          report 1aa6a0b91748.
+          Test: test_fingerprint_ignores_where_the_dataset_lived_on_disk
+          — asserts `data/seed42`, `data\seed42` and an absolute path
+          hash identically, while seed and scale still move the hash.
+────────────────────────────────────────────────────────
+
+
+#10 · Gate 7 (L3 subset matcher) · §4.3a, §7.4
+SYMPTOM   A /review card explained itself with "9 order(s) totalling
+          ₹20,813.00 less 1 refund(s) of ₹214.00 invert to the
+          ₹20,149.87 credit at the inferred 1.830% MDR (within 442
+          paise of rounding tolerance 50)". 442 paise is not within a
+          50 paise tolerance. The match had been accepted anyway.
+CAUSE     The solver matches over `_gross_equivalents(pool, fee)` — a
+          refund is worth more than its face value in gross space,
+          because it is deducted after the MDR and GST are taken — and
+          `tol` is the tolerance it applies there. `_propose` then
+          computed the drift it PRINTS from the raw signed amounts.
+          Two different spaces, one sentence, nothing to tell a reader
+          which was which. On any settlement carrying a refund the two
+          diverge by the refund's own MDR and GST.
+IMPACT    3 of 11 L3 proposals on seed 42, and every one of the three
+          carried a refund. The worst claimed "within 717 paise of
+          rounding tolerance 0" about a reconstruction that tied
+          exactly.
+          The matching was never wrong. Precision held at 100.0% and
+          the solver's real drift was inside tolerance every time. Only
+          the sentence explaining it was wrong, which is the more
+          dangerous half: the premise of these screens is that a
+          controller can read the reason and check it. One line that
+          fails arithmetic a reader can do in their head costs the
+          lines that are right their credibility too.
+FIX       Drift measured over `_gross_equivalents(rows, fee)` — the
+          same space, from the same call, that the solver was given.
+          Face values stay in the human-facing half of the sentence,
+          where a reader wants the refund's actual amount.
+EVIDENCE  seed 42, printed drift -> drift the solver enforced:
+            UTR-20814950     442 ->  30   tol 50
+            UTR-30509175    2517 ->   1   tol 50
+            UTR-68496914     717 ->   0   tol  0  (clause now dropped)
+            UTR-82498004       1 ->   1   tol 50  (no refund, was fine)
+          Fingerprint unchanged at 1aa6a0b91748 — no scored figure
+          moved, which is exactly why it cleared every gate.
+          Test: test_the_stated_drift_is_the_one_the_solver_actually_
+          enforced — parses every "within N paise of tolerance T" out
+          of the live review queue and asserts N <= T. Confirmed to
+          fail on the old code with "442 <= 50".
+FOUND BY  Reading the terminal report, not a test. The line "of which
+          pending in review  -₹0.16" prompted the question whether a
+          negative sixteen paise was legitimate. It was — nine review
+          items at +1/+2 paise against one at −28, and the books post
+          ₹0.00 because all of them are still in review. Chasing that
+          −28 outlier is what surfaced the reason string.
+────────────────────────────────────────────────────────
+
+
+────────────────────────────────────────────────────────────────────────
+GATE 0 — nothing logged, deliberately.
+
+Everything that went wrong at gate 0 falls under NEVER LOG: GNU make absent
+from PATH, cp1252 console unable to encode ₹ and box-drawing characters,
+`bash` resolving to WSL instead of Git Bash, CRLF line endings breaking .sh
+files on the Ubuntu CI runner. All environment setup. None of it is
+engineering.
+
+One borderline case, not logged: the enum base class. `class Source(str, Enum)`
+as written in §3.4 makes str(Source.BANK) == "Source.BANK" on Python 3.11+,
+so the guide's own §8.3 narration f"... {exc.reason_code}" would have posted
+"ReasonCode.AMOUNT_MISMATCH" into the books. Switched to StrEnum.
+
+It meets two criteria — silently wrong, and it changed the data model. But
+ruff flagged it in seconds, so it cost no diagnosis time, and no measured
+number moved because no metric exists yet. Spending one of ten slots on
+something a linter caught before any code was written would read as padding.
+Recorded here as a note rather than as entry #1.
+────────────────────────────────────────────────────────────────────────

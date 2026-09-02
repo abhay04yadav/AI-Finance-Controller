@@ -13,6 +13,20 @@ The first request after an idle spell wakes the API container and takes ~30s.
 >
 > Deterministic where we can be. Probabilistic only where we must be. Measured everywhere.
 
+The argument this is built to test: **reconciliation is an arithmetic problem, not a
+language problem.** Three records disagree because arithmetic was applied between them —
+a fee, a tax on the fee, a date shift, a refund netted out of a later payout — and
+arithmetic can be inverted. Inverting it in code matches 98.3% of the credits with no
+model involved at all, at 100.0% precision, and every one of those answers is
+re-derivable to the paisa tomorrow. What is left is genuinely not arithmetic: a credit
+that several different sets of orders explain equally well, where the evidence
+underdetermines the answer and something has to choose. That residue — 3 cases in 60 — is
+the only place a model is asked anything, and even there it selects among candidates the
+deterministic layers already proved, never computing an amount and never posting an entry.
+The rest of this document is arranged so that claim can be checked rather than believed:
+a fingerprint over every non-timing figure, an answer key the run is scored against, and a
+screen that shows the arithmetic behind any row you click.
+
 ---
 
 ## Table of contents
@@ -534,7 +548,7 @@ python tasks.py generate              # build the seeded dataset + ground truth
 python tasks.py eval                  # score the agent against it
 ```
 
-Under two minutes on a cold clone. `tasks.py` resolves the project virtualenv itself —
+About two and a half minutes on a cold clone — measured at 139s end to end (clone 3s, `setup` 133s, `generate` and `eval` under 3s between them); almost all of it is pip resolving dependencies. `tasks.py` resolves the project virtualenv itself —
 **there is no activate step**, and nothing installs into your global Python.
 
 You should see, on any machine:
@@ -935,16 +949,6 @@ invented:
   Razorpay Docs, *About Settlements*
 - **Escrow account, Tp+0/Tp+1 remittance, permitted credits and debits, no float
   interest** — RBI, *Guidelines on Regulation of Payment Aggregators and Payment Gateways*
-
-### Design documents
-
-The full specification this was built to, and the gate-by-gate review guide it
-was checked against, are in [`docs/`](docs/):
-
-- [`docs/AI Finance Controller.md`](docs/AI%20Finance%20Controller.md) — implementation guide.
-  The `§` references throughout the code (`§4.1`, `§6.2`, …) point here.
-- [`docs/AI Finance Controller — Review Guide.md`](docs/AI%20Finance%20Controller%20%E2%80%94%20Review%20Guide.md)
-  — the 14 verification gates, each with the number it has to hit.
 
 ---
 

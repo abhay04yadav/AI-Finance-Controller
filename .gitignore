@@ -8,14 +8,10 @@ venv/
 .ruff_cache/
 .mypy_cache/
 
-# Secrets ??? .env.example is checked in, .env never is (??9.8)
+# Secrets — .env.example is checked in, .env never is (§9.8)
 .env
 
-# The build log behind the submission answer "What broke, and how you got out"
-# (??0.1). A working document ??? kept local, never committed, never pushed.
-broke_fixed.txt
-
-# The two spec documents this build was written against ??? the implementation
+# The two spec documents this build was written against — the implementation
 # guide and the review guide. Local working documents. They were tracked between
 # 64c1e95 and gate 11 and have been removed from the index and purged from
 # history; this line is what stops them coming back on the next `git add -A`.
@@ -51,7 +47,7 @@ build/
 # Eval run snapshots (keep the directory, ignore the dumps)
 eval/runs/*.json
 
-# Node / Next.js ??? gate 12
+# Node / Next.js — gate 12
 node_modules/
 web/.next/
 web/out/
