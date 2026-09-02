@@ -741,7 +741,7 @@ This is **enforced, not aspirational** — an AST-based check runs in CI and fai
 on violation:
 
 ```bash
-make layer-check
+python tasks.py layer-check
 ```
 
 ---
@@ -770,7 +770,8 @@ make-only target because it is a shell pipeline, not a command.
 
 ### Quality gates
 
-`make drift-check` runs continuously during development and fails on any of:
+`python tasks.py drift-check` runs continuously during development and fails on
+any of:
 
 1. A float anywhere in the money path
 2. A wall-clock call inside business logic
